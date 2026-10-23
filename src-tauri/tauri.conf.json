@@ -14,8 +14,8 @@
       {
         "label": "main",
         "title": "BongoCatBuddy",
-        "width": 220,
-        "height": 280,
+        "width": 305,
+        "height": 461,
         "transparent": true,
         "decorations": false,
         "alwaysOnTop": true,
