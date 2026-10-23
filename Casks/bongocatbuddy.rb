@@ -9,13 +9,16 @@ cask "bongocatbuddy" do
   homepage "https://github.com/janthoXO/BongoCatBuddy"
 
   depends_on arch: :arm64
+  depends_on :macos
 
   app "BongoCatBuddy.app"
 
   # The app is only ad-hoc signed, so Gatekeeper would refuse to open it.
-  postflight do
-    system_command "/usr/bin/xattr",
-                   args: ["-dr", "com.apple.quarantine", "#{appdir}/BongoCatBuddy.app"]
+  postflight_steps do
+    run "/usr/bin/xattr",
+        args:           ["-dr", "com.apple.quarantine", "{{appdir}}/BongoCatBuddy.app"],
+        writable_paths: ["BongoCatBuddy.app"],
+        writable_base:  :appdir
   end
 
   zap trash: [
