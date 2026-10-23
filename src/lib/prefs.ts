@@ -31,7 +31,7 @@ export type Prefs = {
   lastLobby?: string;
   /** "row": other players' cats line up beside ours and follow it; "free": each is dragged on its own */
   catLayout: "row" | "free";
-  /** at most this many other cats get a window */
+  /** at most this many other cats get a window (each one is a webview, ~100 MB) */
   maxCats: number;
   /** size of other players' cats, one of CAT_SCALES */
   remoteCatScale: number;
@@ -72,7 +72,7 @@ const DEFAULTS: Prefs = {
   craftExcludeEvent: true,
   joinLastLobby: true,
   catLayout: "row",
-  maxCats: 8,
+  maxCats: 4,
   remoteCatScale: 0.75,
   showPlayerNames: true,
   multiplayerPopups: true,
