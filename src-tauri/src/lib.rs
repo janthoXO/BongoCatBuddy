@@ -17,7 +17,7 @@ use serde::Serialize;
 use steamworks::{AppId, Client};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 const APP_ID: u32 = 3419430;
 /// Same cap the game uses before an i32 stat would overflow.
@@ -77,6 +77,9 @@ struct Hit {
     hold: bool,
     hovered: Option<String>,
     passthrough: bool,
+    /// last cursor position and the overlay's top-left corner, both in global logical px
+    cursor: (f64, f64),
+    origin: (f64, f64),
 }
 
 #[derive(Default)]
@@ -128,24 +131,27 @@ fn set_ignore_mouse(state: Sh, ignore: bool) {
 
 /// The overlay's mouse areas (window-relative CSS px) by id; `hold` while dragging.
 #[tauri::command]
-fn set_hit_rects(state: Sh, rects: Vec<(String, f64, f64, f64, f64)>, hold: bool) {
-    let mut hit = state.hit.lock().unwrap();
-    hit.rects = rects;
-    hit.hold = hold;
+fn set_hit_rects(app: AppHandle, state: Sh, rects: Vec<(String, f64, f64, f64, f64)>, hold: bool) {
+    {
+        let mut hit = state.hit.lock().unwrap();
+        hit.rects = rects;
+        hit.hold = hold;
+    }
+    // a box may have moved under a resting cursor
+    update_hit(&app, &state.hit, None);
 }
 
 /// Turns click-through off only while the cursor is over a hit rect, and tells the overlay
-/// what is hovered (CSS :hover can't see a click-through window). Polled, so it needs no
-/// input permission. Window calls go through the main thread, where sync commands like
-/// set_hit_rects run too, so `hit` is never locked across them.
-fn update_hit(app: &AppHandle, hit: &Mutex<Hit>) {
-    let Some(w) = app.get_webview_window("main") else { return };
-    let (Ok(cursor), Ok(origin), Ok(sf)) = (app.cursor_position(), w.outer_position(), w.scale_factor()) else {
-        return;
-    };
-    let (x, y) = ((cursor.x - origin.x as f64) / sf, (cursor.y - origin.y as f64) / sf);
+/// what is hovered (CSS :hover can't see a click-through window). Runs on every global mouse
+/// move (`cursor`) and when the rects change. Window calls go through the main thread, where
+/// sync commands like set_hit_rects run too, so `hit` is never locked across them.
+fn update_hit(app: &AppHandle, hit: &Mutex<Hit>, cursor: Option<(f64, f64)>) {
     let (passthrough, hovered) = {
         let mut hit = hit.lock().unwrap();
+        if let Some(c) = cursor {
+            hit.cursor = c;
+        }
+        let (x, y) = (hit.cursor.0 - hit.origin.0, hit.cursor.1 - hit.origin.1);
         let now = hit
             .rects
             .iter()
@@ -157,7 +163,9 @@ fn update_hit(app: &AppHandle, hit: &Mutex<Hit>) {
         hit.hovered = now.clone();
         (changed.0.then_some(passthrough), changed.1.then_some(now))
     };
-    if let Some(p) = passthrough {
+    if let Some(p) = passthrough
+        && let Some(w) = app.get_webview_window("main")
+    {
         let _ = w.set_ignore_cursor_events(p);
     }
     if let Some(now) = hovered {
@@ -168,13 +176,11 @@ fn update_hit(app: &AppHandle, hit: &Mutex<Hit>) {
 /// Dev only: cursor (window px), rects and state of the click-through hit testing.
 #[cfg(debug_assertions)]
 #[tauri::command]
-fn debug_hit(app: AppHandle, state: Sh) -> String {
-    let w = app.get_webview_window("main").unwrap();
-    let (cursor, origin) = (app.cursor_position(), w.outer_position());
+fn debug_hit(state: Sh) -> String {
     let hit = state.hit.lock().unwrap();
     format!(
-        "cursor {cursor:?} origin {origin:?} rects {:?} hold {} hovered {:?} passthrough {}",
-        hit.rects, hit.hold, hit.hovered, hit.passthrough
+        "cursor {:?} origin {:?} rects {:?} hold {} hovered {:?} passthrough {}",
+        hit.cursor, hit.origin, hit.rects, hit.hold, hit.hovered, hit.passthrough
     )
 }
 
@@ -440,6 +446,20 @@ pub fn run() {
             if let Some(w) = app.get_webview_window("main") {
                 w.set_ignore_cursor_events(true)?;
                 shared.hit.lock().unwrap().passthrough = true;
+                // Cache where the overlay is, so mouse moves need no window calls.
+                let origin = move |w: &tauri::WebviewWindow| -> Option<(f64, f64)> {
+                    let p = w.outer_position().ok()?.to_logical::<f64>(w.scale_factor().ok()?);
+                    Some((p.x, p.y))
+                };
+                shared.hit.lock().unwrap().origin = origin(&w).unwrap_or_default();
+                let (win, sh) = (w.clone(), shared.clone());
+                w.on_window_event(move |e| {
+                    if matches!(e, WindowEvent::Moved(_) | WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. })
+                        && let Some(o) = origin(&win)
+                    {
+                        sh.hit.lock().unwrap().origin = o;
+                    }
+                });
             }
 
             let taps = Arc::new(AtomicU32::new(0));
@@ -494,6 +514,7 @@ fn spawn_input(app: AppHandle, shared: Arc<Shared>, taps: Arc<AtomicU32>) {
     thread::spawn(move || {
         let mut held = HashSet::new();
         let sh = shared.clone();
+        let hook_app = app.clone();
         let result = listen(move |e| match e.event_type {
             EventType::KeyPress(k) if held.insert(k) => {
                 taps.fetch_add(1, Ordering::Relaxed);
@@ -504,6 +525,8 @@ fn spawn_input(app: AppHandle, shared: Arc<Shared>, taps: Arc<AtomicU32>) {
             EventType::ButtonPress(_) if !sh.ignore_mouse.load(Ordering::Relaxed) => {
                 taps.fetch_add(1, Ordering::Relaxed);
             }
+            // ponytail: rdev reports macOS points, which match logical px; check units if Windows/Linux builds matter
+            EventType::MouseMove { x, y } => update_hit(&hook_app, &sh.hit, Some((x, y))),
             _ => {}
         });
         if let Err(e) = result {
@@ -512,6 +535,14 @@ fn spawn_input(app: AppHandle, shared: Arc<Shared>, taps: Arc<AtomicU32>) {
                 &shared,
                 format!("Can't read keys ({e:?}). Allow Input Monitoring/Accessibility, then restart."),
             );
+            // No global mouse events either: poll the cursor, slower, so the cats stay clickable.
+            loop {
+                thread::sleep(Duration::from_millis(100));
+                let sf = app.get_webview_window("main").and_then(|w| w.scale_factor().ok());
+                if let (Ok(p), Some(sf)) = (app.cursor_position(), sf) {
+                    update_hit(&app, &shared.hit, Some((p.x / sf, p.y / sf)));
+                }
+            }
         }
     });
 }
@@ -534,7 +565,6 @@ fn main_loop(app: AppHandle, sh: Arc<Shared>, taps: Arc<AtomicU32>) {
 
     loop {
         thread::sleep(TICK);
-        update_hit(&app, &sh.hit);
         let n = taps.swap(0, Ordering::Relaxed).min(MAX_STAT as u32) as i32;
         if n > 0 {
             let _ = app.emit("tap", n);
