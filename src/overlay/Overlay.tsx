@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize } from "@tauri-apps/api/dpi";
-import { Menu, PawPrint } from "lucide-react";
-import { useItems, artUrl, CHEST_TOKEN, EMOTE_CHEST_TOKEN, iconUrl, QUALITY_COLORS, type Item } from "@/lib/items";
+import { Heart, Menu, MessageCircle, PawPrint } from "lucide-react";
+import { useItems, CHEST_TOKEN, EMOTE_CHEST_TOKEN, iconUrl, QUALITY_COLORS, type Item } from "@/lib/items";
 import { MAX_WHEEL_EMOTES, usePrefs } from "@/lib/prefs";
 import Chest from "./Chest";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { CatFigure, FIGURE_H, FIGURE_W } from "@/components/CatFigure";
+import { EmoteParticle } from "@/components/EmoteParticle";
+import { CH, lobbySend, MAX_SPEECH, onLobbyMsg, useLobby } from "@/lib/lobby";
+import { useCatWindows } from "./catWindows";
 
 const UNIT = 1.25; // px per unit at catScale 1
 const HIT_MS = 100;
@@ -41,19 +44,6 @@ type Score = { current: number; lifetime: number };
 type Particle = { k: number; item: Item };
 type Won = { k: number; id: number };
 
-function EmoteParticle({ item, left, top }: { item: Item; left: number; top: number }) {
-  const [src, setSrc] = useState(artUrl(item));
-  return (
-    <img
-      src={src}
-      onError={() => setSrc(iconUrl(item))}
-      draggable={false}
-      className="emote-float pointer-events-none absolute z-30 size-16"
-      style={{ left, top }}
-    />
-  );
-}
-
 export default function Overlay() {
   const [prefs, update] = usePrefs();
   const { catalog } = useItems();
@@ -65,6 +55,13 @@ export default function Overlay() {
   const [wheel, setWheel] = useState(false);
   const [particles, setParticles] = useState<Particle[]>([]);
   const [queue, setQueue] = useState<Won[]>([]);
+  const lobby = useLobby();
+  const [chestReady, setChestReady] = useState({ cosmetic: false, emote: false });
+  const [gift, setGift] = useState({ cosmetic: 0, emote: 0 });
+  const [hearts, setHearts] = useState<number[]>([]);
+  const [squish, setSquish] = useState(false);
+  const [typing, setTyping] = useState(false);
+  const [speech, setSpeech] = useState<{ k: number; text: string } | null>(null);
   const wasLeft = useRef(false);
   const punching = useRef({ left: false, right: false });
   const seq = useRef(0);
@@ -77,6 +74,59 @@ export default function Overlay() {
   const hatItem = owned(prefs.equipped.hat);
 
   const L = layout(prefs.catScale);
+
+  // Multiplayer: other players' cat windows, what they see of us, and what they send us.
+  useCatWindows(lobby, prefs);
+  useEffect(() => {
+    if (!catalog) return;
+    const data = {
+      hat: String(hatItem?.id ?? -1),
+      skin: String(skin?.id ?? -1),
+      chest_ready: String(chestReady.cosmetic),
+      emote_chest_ready: String(chestReady.emote && prefs.showEmoteChest),
+    };
+    invoke("lobby_set_me", { data }).catch(() => {});
+  }, [catalog, hatItem?.id, skin?.id, chestReady, prefs.showEmoteChest]);
+  useEffect(() => {
+    if (prefs.joinLastLobby && prefs.lastLobby)
+      invoke("lobby_join_id", { id: prefs.lastLobby }).catch(() => update({ lastLobby: undefined }));
+  }, []);
+  useEffect(() => {
+    if (lobby && lobby.id !== prefs.lastLobby) update({ lastLobby: lobby.id });
+  }, [lobby?.id]);
+  const live = useRef({ me: "", receivePats: true });
+  live.current = { me: lobby?.me ?? "", receivePats: prefs.receivePats };
+  useEffect(() => {
+    const un = onLobbyMsg((m) => {
+      const { me, receivePats } = live.current;
+      if (m.channel === CH.pat && m.message === me && receivePats) {
+        setSquish(true);
+        setTimeout(() => setSquish(false), 700);
+        const k = ++seq.current;
+        setHearts((h) => [...h, k]);
+        setTimeout(() => setHearts((h) => h.filter((x) => x !== k)), 1500);
+      } else if (m.channel === CH.openChest) {
+        const [target, type] = m.message.split(":");
+        if (target === me) {
+          const kind = type === "1" ? "emote" : "cosmetic";
+          setGift((g) => ({ ...g, [kind]: g[kind] + 1 }));
+        }
+      }
+    });
+    return () => void un.then((f) => f());
+  }, []);
+  useEffect(() => {
+    if (!speech) return;
+    const id = setTimeout(() => setSpeech(null), 5000);
+    return () => clearTimeout(id);
+  }, [speech?.k]);
+  const say = (text: string) => {
+    setTyping(false);
+    text = text.trim().slice(0, MAX_SPEECH);
+    if (!text) return;
+    setSpeech({ k: ++seq.current, text });
+    void lobbySend(CH.speech, text);
+  };
 
   useEffect(() => {
     void getCurrentWindow().setSize(new LogicalSize(L.w, L.h)).catch(() => {});
@@ -108,6 +158,10 @@ export default function Overlay() {
         wasLeft.current = !wasLeft.current;
       }),
       listen<string>("notice", (e) => setError(e.payload)),
+      listen<string>("lobby-error", (e) => {
+        setFlash(e.payload);
+        setTimeout(() => setFlash(null), 4000);
+      }),
     ];
     return () => unlisten.forEach((p) => p.then((f) => f()));
   }, []);
@@ -115,6 +169,7 @@ export default function Overlay() {
 
   const onWon = (id: number) => {
     setQueue((q) => [...q, { k: ++seq.current, id }]);
+    void lobbySend(CH.item, String(id));
     const it = catalog?.get(id);
     if (prefs.autoEquipDrops && (it?.slot === "hat" || it?.slot === "skin"))
       update({ equipped: { ...prefs.equipped, [it.slot]: id } });
@@ -137,6 +192,7 @@ export default function Overlay() {
     const k = ++seq.current;
     setParticles((p) => [...p, { k, item }]);
     setTimeout(() => setParticles((p) => p.filter((x) => x.k !== k)), 1500);
+    void lobbySend(CH.emote, String(item.id));
     invoke("use_emote", { def: item.id }).catch((e) => {
       setFlash(String(e));
       setTimeout(() => setFlash(null), 3000);
@@ -166,6 +222,8 @@ export default function Overlay() {
         .chest-idle { animation: chest-idle 1.6s ease-in-out infinite; }
         .bob { animation: bob 2s ease-in-out infinite; }
         .emote-float { animation: emote-float 1.5s ease-out forwards; }
+        @keyframes squish { 30% { transform: scale(1.15, 0.85); } 60% { transform: scale(0.9, 1.1); } }
+        .squish { animation: squish 0.7s ease-out; transform-origin: bottom; }
         .chest-shake { animation: chest-shake 0.4s; }
         .chest-pop { animation: chest-pop 0.5s; }
         .chest-float { animation: chest-float 1s ease-out forwards; }
@@ -244,6 +302,7 @@ export default function Overlay() {
           }}
         >
           <CatFigure
+            className={squish ? "squish" : undefined}
             {...(prefs.lockPosition ? {} : { "data-tauri-drag-region": true })}
             unit={L.u}
             skin={skin}
@@ -255,8 +314,27 @@ export default function Overlay() {
         </div>
       </div>
 
+      {speech && (
+        <p
+          key={speech.k}
+          className="pointer-events-none absolute left-1/2 top-1 z-20 line-clamp-2 -translate-x-1/2 break-words rounded-xl border-2 border-outline bg-card px-2 py-0.5 text-center text-xs text-foreground shadow-sticker-sm"
+          style={{ maxWidth: L.w - 8 }}
+        >
+          {speech.text}
+        </p>
+      )}
+      {hearts.map((k, i) => (
+        <Heart
+          key={k}
+          className="emote-float pointer-events-none absolute z-30 size-6 fill-primary text-primary"
+          style={{ left: L.w / 2 - 12 + ((i % 3) - 1) * 18, top: TOP + WHEEL_CY - 40 }}
+        />
+      ))}
+
       <Chest
         kind="cosmetic"
+        onReady={(r) => setChestReady((c) => (c.cosmetic === r ? c : { ...c, cosmetic: r }))}
+        gift={gift.cosmetic}
         tokens={catalog ? (catalog.get(CHEST_TOKEN)?.qty ?? 0) : null}
         score={score?.current ?? null}
         prefs={prefs}
@@ -266,6 +344,8 @@ export default function Overlay() {
       {prefs.showEmoteChest && (
         <Chest
           kind="emote"
+          onReady={(r) => setChestReady((c) => (c.emote === r ? c : { ...c, emote: r }))}
+          gift={gift.emote}
           tokens={catalog ? (catalog.get(EMOTE_CHEST_TOKEN)?.qty ?? 0) : null}
           score={score?.current ?? null}
           prefs={prefs}
@@ -292,6 +372,16 @@ export default function Overlay() {
             <PawPrint className="size-3.5 text-primary" />
             {score ? score.current.toLocaleString("en-US").replace(/,/g, " ") : "…"}
           </span>
+          {lobby && (
+            <button
+              type="button"
+              title="Say something"
+              onClick={() => setTyping(true)}
+              className="flex size-6 items-center justify-center rounded-full border-2 border-outline bg-card text-foreground opacity-0 shadow-sticker-sm group-hover:opacity-100"
+            >
+              <MessageCircle className="size-3" />
+            </button>
+          )}
           <button
             type="button"
             title="Menu"
@@ -301,6 +391,20 @@ export default function Overlay() {
             <Menu className="size-3" />
           </button>
         </div>
+        {typing && (
+          <input
+            autoFocus
+            maxLength={MAX_SPEECH}
+            placeholder="Say something…"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") say(e.currentTarget.value);
+              if (e.key === "Escape") setTyping(false);
+            }}
+            onBlur={(e) => say(e.currentTarget.value)}
+            className="rounded-full border-2 border-outline bg-card px-2 text-xs leading-5 text-foreground shadow-sticker-sm outline-none"
+            style={{ width: L.w - 16 }}
+          />
+        )}
         {notice && (
           <p
             className="max-w-full truncate rounded-full border-2 border-border bg-card px-2 text-center text-[10px] leading-4 text-muted-foreground"

@@ -25,6 +25,24 @@ export type Prefs = {
   craftAllowFavorites: boolean;
   /** crafting never auto-slots event items */
   craftExcludeEvent: boolean;
+  /** rejoin the last lobby on start */
+  joinLastLobby: boolean;
+  /** raw id of the lobby we were in when the app closed */
+  lastLobby?: string;
+  /** "row": other players' cats line up beside ours and follow it; "free": each is dragged on its own */
+  catLayout: "row" | "free";
+  /** at most this many other cats get a window */
+  maxCats: number;
+  /** size of other players' cats, one of CAT_SCALES */
+  remoteCatScale: number;
+  showPlayerNames: boolean;
+  /** show what other players get from chests */
+  multiplayerPopups: boolean;
+  /** react to pats from others */
+  receivePats: boolean;
+  muteChats: boolean;
+  /** steam ids whose cat is not shown */
+  hiddenPlayers: string[];
   equipped: Partial<Record<"hat" | "skin", number>>;
   /** emote/consumable ids shown in the emote wheel */
   emotes: number[];
@@ -34,6 +52,7 @@ export type Prefs = {
 
 export const CAT_SCALES = [0.5, 0.75, 1, 1.25, 1.5, 2, 4];
 export const MAX_WHEEL_EMOTES = 8;
+export const MAX_CATS_CHOICES = [4, 8, 12, 20];
 
 const DEFAULTS: Prefs = {
   catScale: 1,
@@ -51,6 +70,15 @@ const DEFAULTS: Prefs = {
   showEmoteWheel: true,
   craftAllowFavorites: false,
   craftExcludeEvent: true,
+  joinLastLobby: true,
+  catLayout: "row",
+  maxCats: 8,
+  remoteCatScale: 0.75,
+  showPlayerNames: true,
+  multiplayerPopups: true,
+  receivePats: true,
+  muteChats: false,
+  hiddenPlayers: [],
   equipped: {},
   emotes: [],
   favorites: [],

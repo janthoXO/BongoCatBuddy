@@ -1,13 +1,13 @@
 import { useEffect, useState, type ComponentType } from "react";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
-import { CatIcon, GiftIcon, HammerIcon, MonitorIcon, SmileIcon } from "lucide-react";
+import { CatIcon, GiftIcon, HammerIcon, MonitorIcon, SmileIcon, UsersIcon } from "lucide-react";
 import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { CAT_SCALES, usePrefs, type Prefs } from "@/lib/prefs";
+import { CAT_SCALES, MAX_CATS_CHOICES, usePrefs, type Prefs } from "@/lib/prefs";
 
-type BoolKey = { [K in keyof Prefs]: Prefs[K] extends boolean ? K : never }[keyof Prefs];
+type BoolKey = { [K in keyof Prefs]-?: Prefs[K] extends boolean ? K : never }[keyof Prefs];
 
 const SECTIONS: { title: string; icon: ComponentType<{ className?: string }>; rows: [BoolKey, string, string][] }[] = [
   {
@@ -41,6 +41,17 @@ const SECTIONS: { title: string; icon: ComponentType<{ className?: string }>; ro
     ],
   },
   {
+    title: "Multiplayer",
+    icon: UsersIcon,
+    rows: [
+      ["joinLastLobby", "Rejoin last lobby", "Join the lobby you were in when the app starts."],
+      ["showPlayerNames", "Show player names", "Show a name tag under other players' cats."],
+      ["multiplayerPopups", "Show others' new items", "Pop up what other players get from chests."],
+      ["receivePats", "Receive pats", "React when other players pat your cat."],
+      ["muteChats", "Mute chat bubbles", "Hide speech bubbles from other players."],
+    ],
+  },
+  {
     title: "Crafting",
     icon: HammerIcon,
     rows: [
@@ -58,6 +69,25 @@ function Row({ id, label, desc, checked, onChange }: { id: string; label: string
         <FieldDescription>{desc}</FieldDescription>
       </FieldContent>
       <Switch id={id} checked={checked} onCheckedChange={onChange} />
+    </Field>
+  );
+}
+
+const chipClass =
+  "h-8 rounded-full border-2 border-border px-3 font-heading tabular-nums aria-pressed:border-outline aria-pressed:bg-primary aria-pressed:text-primary-foreground aria-pressed:shadow-sticker-sm aria-pressed:hover:bg-primary";
+
+function Choice({ label, desc, value, options, onChange }: { label: string; desc?: string; value: string; options: [string, string][]; onChange: (v: string) => void }) {
+  return (
+    <Field>
+      <FieldLabel>{label}</FieldLabel>
+      {desc && <FieldDescription>{desc}</FieldDescription>}
+      <ToggleGroup spacing={1} value={[value]} onValueChange={(v) => v[0] && onChange(v[0])} className="flex-wrap">
+        {options.map(([v, text]) => (
+          <ToggleGroupItem key={v} value={v} className={chipClass}>
+            {text}
+          </ToggleGroupItem>
+        ))}
+      </ToggleGroup>
     </Field>
   );
 }
@@ -89,25 +119,35 @@ export function Settings() {
         {SECTIONS.map((s) => (
           <Card key={s.title} title={s.title} icon={s.icon}>
             {s.title === "Cat" && (
-              <Field>
-                <FieldLabel>Cat size</FieldLabel>
-                <ToggleGroup
-                  spacing={1}
-                  value={[String(prefs.catScale)]}
-                  onValueChange={(v) => v[0] && update({ catScale: Number(v[0]) })}
-                  className="flex-wrap"
-                >
-                  {CAT_SCALES.map((c) => (
-                    <ToggleGroupItem
-                      key={c}
-                      value={String(c)}
-                      className="h-8 rounded-full border-2 border-border px-3 font-heading tabular-nums aria-pressed:border-outline aria-pressed:bg-primary aria-pressed:text-primary-foreground aria-pressed:shadow-sticker-sm aria-pressed:hover:bg-primary"
-                    >
-                      {Math.round(c * 100)}%
-                    </ToggleGroupItem>
-                  ))}
-                </ToggleGroup>
-              </Field>
+              <Choice
+                label="Cat size"
+                value={String(prefs.catScale)}
+                options={CAT_SCALES.map((c) => [String(c), `${Math.round(c * 100)}%`])}
+                onChange={(v) => update({ catScale: Number(v) })}
+              />
+            )}
+            {s.title === "Multiplayer" && (
+              <>
+                <Choice
+                  label="Cat layout"
+                  desc={prefs.catLayout === "row" ? "Other cats line up next to yours and follow it." : "Drag every cat on its own; they remember their spot."}
+                  value={prefs.catLayout}
+                  options={[["row", "Row"], ["free", "Free"]]}
+                  onChange={(v) => update({ catLayout: v as Prefs["catLayout"] })}
+                />
+                <Choice
+                  label="Other cats' size"
+                  value={String(prefs.remoteCatScale)}
+                  options={CAT_SCALES.map((c) => [String(c), `${Math.round(c * 100)}%`])}
+                  onChange={(v) => update({ remoteCatScale: Number(v) })}
+                />
+                <Choice
+                  label="Max cats shown"
+                  value={String(prefs.maxCats)}
+                  options={MAX_CATS_CHOICES.map((c) => [String(c), String(c)])}
+                  onChange={(v) => update({ maxCats: Number(v) })}
+                />
+              </>
             )}
             {s.rows.map(([key, label, desc]) => (
               <Row key={key} id={key} label={label} desc={desc} checked={prefs[key]} onChange={(v) => update({ [key]: v })} />

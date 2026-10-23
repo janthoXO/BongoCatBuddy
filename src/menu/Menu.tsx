@@ -10,6 +10,7 @@ import { CHEST_TOKEN, EMOTE_CHEST_TOKEN, useItems } from "@/lib/items";
 import { usePrefs } from "@/lib/prefs";
 import { Crafting } from "./Crafting";
 import { Inventory } from "./Inventory";
+import { Lobby } from "./Lobby";
 import { Settings } from "./Settings";
 
 type Score = { current: number; lifetime: number };
@@ -67,6 +68,7 @@ export default function Menu() {
           <TabsList className="group-data-horizontal/tabs:h-auto w-fit gap-1 rounded-full border-2 border-border bg-card p-1">
             <TabsTrigger value="inventory" className={tabClass}>Inventory</TabsTrigger>
             <TabsTrigger value="crafting" className={tabClass}>Crafting</TabsTrigger>
+            <TabsTrigger value="lobby" className={tabClass}>Lobby</TabsTrigger>
             <TabsTrigger value="settings" className={tabClass}>Settings</TabsTrigger>
           </TabsList>
           <TabsContent value="inventory" className="flex min-h-0 flex-col">
@@ -74,6 +76,9 @@ export default function Menu() {
           </TabsContent>
           <TabsContent value="crafting" className="flex min-h-0 flex-col">
             <Crafting />
+          </TabsContent>
+          <TabsContent value="lobby" className="flex min-h-0 flex-col">
+            <Lobby />
           </TabsContent>
           <TabsContent value="settings" className="flex min-h-0 flex-col">
             <Settings />

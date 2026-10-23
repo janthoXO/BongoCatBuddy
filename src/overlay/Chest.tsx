@@ -20,15 +20,20 @@ function load(key: string) {
 const mmss = (s: number) =>
   `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
-/** One chest shop bubble with its restock timer. `tokens` is null until the catalog is known. */
+/**
+ * One chest shop bubble with its restock timer. `tokens` is null until the catalog is known.
+ * When `gift` changes, another player paid for this chest: it opens for free if it is ready.
+ */
 export default function Chest({
-  kind, tokens, score, prefs, onWon, style,
+  kind, tokens, score, prefs, onWon, onReady, gift, style,
 }: {
   kind: "cosmetic" | "emote";
   tokens: number | null;
   score: number | null;
   prefs: Prefs;
   onWon: (id: number) => void;
+  onReady: (ready: boolean) => void;
+  gift: number;
   style: CSSProperties;
 }) {
   const key = KEYS[kind];
@@ -55,21 +60,14 @@ export default function Chest({
     return () => clearTimeout(id);
   }, [t, ready, tokens, key]);
 
-  const visible = (ready && prefs.showChestPopup) || prefs.alwaysShowChest || fx > 0;
-  if (!visible) return null;
-  const afford = score !== null && score >= CHEST_PRICE;
+  useEffect(() => {
+    onReady(ready && !busy);
+  }, [ready, busy]);
 
-  const click = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (busy || !ready) return;
-    if (!afford) {
-      setShake(true);
-      setTimeout(() => setShake(false), 400);
-      return;
-    }
+  const open = async (gift: boolean) => {
     setBusy(true);
     try {
-      const id = await invoke<number>("open_chest", { kind });
+      const id = await invoke<number>("open_chest", { kind, gift });
       setT(FULL);
       setReady(false);
       onWon(id);
@@ -85,6 +83,25 @@ export default function Chest({
     } finally {
       setBusy(false);
     }
+  };
+
+  useEffect(() => {
+    if (gift && ready && !busy) void open(true);
+  }, [gift]);
+
+  const visible = (ready && prefs.showChestPopup) || prefs.alwaysShowChest || fx > 0;
+  if (!visible) return null;
+  const afford = score !== null && score >= CHEST_PRICE;
+
+  const click = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (busy || !ready) return;
+    if (!afford) {
+      setShake(true);
+      setTimeout(() => setShake(false), 400);
+      return;
+    }
+    void open(false);
   };
 
   const emote = kind === "emote";
