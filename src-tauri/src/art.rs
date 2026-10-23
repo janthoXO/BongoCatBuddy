@@ -8,16 +8,13 @@ use std::fs::{self, File};
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
-/// (texture name in the game, file name we write)
-pub const SPRITES: [(&str, &str); 8] = [
+/// (texture name in the game, file name we write). The game ships bongo sprites
+/// too, but never shows them, so neither do we.
+pub const SPRITES: [(&str, &str); 4] = [
     ("CatLeft", "catLeft"),
     ("CatLeftPunch", "catLeftPunch"),
     ("CatRight", "catRight"),
     ("CatRightPunch", "catRightPunch"),
-    ("DefaultBongoLeft", "bongoLeft"),
-    ("DefaultBongoLeftPunch", "bongoLeftPunch"),
-    ("DefaultBongoRight", "bongoRight"),
-    ("DefaultBongoRightPunch", "bongoRightPunch"),
 ];
 
 const SIZE: u32 = 256;

@@ -25,7 +25,7 @@ export type Prefs = {
   craftAllowFavorites: boolean;
   /** crafting never auto-slots event items */
   craftExcludeEvent: boolean;
-  equipped: Partial<Record<"hat" | "skin" | "bongos", number>>;
+  equipped: Partial<Record<"hat" | "skin", number>>;
   /** emote/consumable ids shown in the emote wheel */
   emotes: number[];
   favorites: number[];

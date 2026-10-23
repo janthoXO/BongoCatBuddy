@@ -6,7 +6,7 @@ import { listen } from "@tauri-apps/api/event";
 type RawDef = { id: number; name: string; kind: string; tags: string; name_color: string };
 type Owned = { def: number; qty: number };
 
-export type Slot = "hat" | "skin" | "bongos" | "emote" | "consumable" | "uitheme";
+export type Slot = "hat" | "skin" | "emote" | "consumable" | "uitheme";
 export const QUALITIES = ["common", "uncommon", "rare", "epic", "legendary", "unique"] as const;
 export type Quality = (typeof QUALITIES)[number];
 
@@ -47,7 +47,7 @@ const CDN = "https://pub-d6170922fa31462fa15463d240b18424.r2.dev/";
 const file = (name: string) => name.replace(/ /g, "");
 /** Inventory icon. */
 export const iconUrl = (item: Pick<Item, "name">) => `${CDN}${file(item.name)}Icon.png`;
-/** Full 256x256 art; `part` is "" for hats/emotes, or Left/LeftPunch/Right/RightPunch for skins and bongos. */
+/** Full 256x256 art; `part` is "" for hats/emotes, or Left/LeftPunch/Right/RightPunch for skins. */
 export const artUrl = (item: Pick<Item, "name">, part = "") => `${CDN}${file(item.name)}${part}.png`;
 
 function toItem(d: RawDef, qty: number): Item {
