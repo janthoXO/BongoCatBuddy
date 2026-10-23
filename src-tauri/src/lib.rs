@@ -294,6 +294,7 @@ fn show_menu(app: &AppHandle) -> tauri::Result<()> {
         .title("BongoCatBuddy")
         .inner_size(760.0, 560.0)
         .min_inner_size(560.0, 420.0)
+        .center()
         .build()?;
     Ok(())
 }
@@ -304,6 +305,7 @@ pub fn run() {
     let exit_client = steam.as_ref().ok().cloned();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_autostart::Builder::new().build())
         .setup(move |app| {
             let handle = app.handle().clone();
             let (client, steam_error) = match steam {
