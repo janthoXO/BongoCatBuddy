@@ -18,9 +18,11 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.7.4", features = [] }
 
 [dependencies]
-tauri = { version = "2.12.5", features = ["macos-private-api", "protocol-asset"] }
+tauri = { version = "2.12.5", features = ["macos-private-api", "protocol-asset", "tray-icon"] }
 serde = { version = "1", features = ["derive"] }
 steamworks = "0.13.1"
+# raw bindings for ISteamInventory, which the steamworks crate doesn't wrap
+steamworks-sys = "0.13.0"
 png = "0.18.1"
 # fork fixes macOS crashes of rdev 0.5.3 (same one ayangweb BongoCat uses)
 rdev = { git = "https://github.com/kunkunsh/rdev", rev = "cb9a29e19668a52e4e67d8a0ca6739c1807f8d3f" }

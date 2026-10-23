@@ -162,6 +162,7 @@ dependencies = [
  "rdev",
  "serde",
  "steamworks",
+ "steamworks-sys",
  "tauri",
  "tauri-build",
 ]
