@@ -1,4 +1,6 @@
 mod art;
+#[cfg(debug_assertions)]
+mod devdriver;
 mod inventory;
 
 use std::collections::HashSet;
@@ -342,6 +344,8 @@ pub fn run() {
 
             let taps = Arc::new(AtomicU32::new(0));
             spawn_input(handle.clone(), shared.clone(), taps.clone());
+            #[cfg(debug_assertions)]
+            devdriver::start(handle.clone());
             thread::spawn(move || main_loop(handle, shared, taps));
             Ok(())
         })
@@ -355,7 +359,9 @@ pub fn run() {
             open_menu,
             open_chest,
             craft,
-            use_emote
+            use_emote,
+            #[cfg(debug_assertions)]
+            devdriver::dev_reply
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
