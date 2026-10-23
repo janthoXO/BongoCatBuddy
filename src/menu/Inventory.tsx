@@ -223,7 +223,7 @@ export function Inventory() {
 
       <aside className="flex w-64 shrink-0 flex-col gap-3 overflow-y-auto rounded-xl border-2 border-border bg-card p-3">
         {selected ? (
-          <Details item={selected} />
+          details(selected)
         ) : (
           <Empty className="p-2">
             <EmptyHeader>
@@ -239,7 +239,10 @@ export function Inventory() {
     </div>
   );
 
-  function Details({ item }: { item: Item }) {
+  // Called as a function, not rendered as <Details/>: a component defined in here would be a
+  // new type on every render (each tap re-renders via the score), remounting the buttons
+  // between mousedown and mouseup and swallowing clicks.
+  function details(item: Item) {
     const fav = prefs.favorites.includes(item.id);
     const hid = prefs.hidden.includes(item.id);
     const equipSlot = item.slot === "hat" || item.slot === "skin" ? item.slot : null;
