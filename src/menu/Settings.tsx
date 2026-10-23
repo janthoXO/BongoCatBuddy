@@ -1,4 +1,5 @@
 import { useEffect, useState, type ComponentType } from "react";
+import { availableMonitors, primaryMonitor } from "@tauri-apps/api/window";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { CatIcon, GiftIcon, HammerIcon, MonitorIcon, SmileIcon, UsersIcon } from "lucide-react";
 import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -109,8 +110,13 @@ function Card({ title, icon: Icon, children }: { title: string; icon: ComponentT
 export function Settings() {
   const [prefs, update] = usePrefs();
   const [autostart, setAutostart] = useState(false);
+  // monitor names, the primary one first
+  const [screens, setScreens] = useState<string[]>([]);
   useEffect(() => {
     isEnabled().then(setAutostart).catch(() => {});
+    Promise.all([availableMonitors(), primaryMonitor()])
+      .then(([all, p]) => setScreens(all.map((m) => m.name ?? "").filter(Boolean).sort((a) => (a === p?.name ? -1 : 0))))
+      .catch(() => {});
   }, []);
 
   return (
@@ -124,6 +130,15 @@ export function Settings() {
                 value={String(prefs.catScale)}
                 options={CAT_SCALES.map((c) => [String(c), `${Math.round(c * 100)}%`])}
                 onChange={(v) => update({ catScale: Number(v) })}
+              />
+            )}
+            {s.title === "Cat" && screens.length > 1 && (
+              <Choice
+                label="Screen"
+                desc="The screen your cat and the other cats live on."
+                value={prefs.monitor && screens.includes(prefs.monitor) ? prefs.monitor : screens[0]}
+                options={screens.map((n) => [n, n])}
+                onChange={(v) => update({ monitor: v })}
               />
             )}
             {s.title === "Multiplayer" && (

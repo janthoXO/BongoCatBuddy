@@ -134,3 +134,24 @@
     @apply font-sans;
     }
 }
+/* Overlay animations (our cat and the other players' cats). */
+@keyframes bob { 50% { transform: translateY(-4px); } }
+@keyframes emote-float { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-80px); opacity: 0; } }
+@keyframes heart-float { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-50px); opacity: 0; } }
+@keyframes chest-shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+@keyframes chest-pop { 40% { transform: scale(1.25); } }
+@keyframes chest-float { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-28px); opacity: 0; } }
+@keyframes chest-idle { 50% { transform: translateY(-2px) rotate(-6deg); } }
+@keyframes popup { 0% { transform: translate(-50%, -12px); opacity: 0; } 8%, 92% { transform: translate(-50%, 0); opacity: 1; } 100% { transform: translate(-50%, 0); opacity: 0; } }
+@keyframes wheel-pop { from { transform: scale(0); opacity: 0; } 70% { transform: scale(1.15); } to { transform: scale(1); opacity: 1; } }
+@keyframes squish { 30% { transform: scale(1.15, 0.85); } 60% { transform: scale(0.9, 1.1); } }
+.bob { animation: bob 2s ease-in-out infinite; }
+.emote-float { animation: emote-float 1.5s ease-out forwards; }
+.heart-float { animation: heart-float 1s ease-out forwards; }
+.chest-shake { animation: chest-shake 0.4s; }
+.chest-pop { animation: chest-pop 0.5s; }
+.chest-float { animation: chest-float 1s ease-out forwards; }
+.chest-idle { animation: chest-idle 1.6s ease-in-out infinite; }
+.popup { animation: popup 4s ease-out both; }
+.wheel-pop { animation: wheel-pop 0.25s ease-out both; }
+.squish { animation: squish 0.7s ease-out; transform-origin: bottom; }

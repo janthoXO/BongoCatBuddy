@@ -31,7 +31,7 @@ export type Prefs = {
   lastLobby?: string;
   /** "row": other players' cats line up beside ours and follow it; "free": each is dragged on its own */
   catLayout: "row" | "free";
-  /** at most this many other cats get a window (each one is a webview, ~100 MB) */
+  /** at most this many other cats are shown */
   maxCats: number;
   /** size of other players' cats, one of CAT_SCALES */
   remoteCatScale: number;
@@ -43,6 +43,12 @@ export type Prefs = {
   muteChats: boolean;
   /** steam ids whose cat is not shown */
   hiddenPlayers: string[];
+  /** screen (monitor name) the overlay covers; the primary one when unset or gone */
+  monitor?: string;
+  /** our cat's box, px inside the overlay */
+  myPos?: [number, number];
+  /** free layout: other cats' boxes by steam id */
+  catPos: Record<string, [number, number]>;
   equipped: Partial<Record<"hat" | "skin", number>>;
   /** emote/consumable ids shown in the emote wheel */
   emotes: number[];
@@ -52,7 +58,7 @@ export type Prefs = {
 
 export const CAT_SCALES = [0.5, 0.75, 1, 1.25, 1.5, 2, 4];
 export const MAX_WHEEL_EMOTES = 8;
-export const MAX_CATS_CHOICES = [4, 8, 12, 20];
+export const MAX_CATS_CHOICES = [4, 8, 20, 50];
 
 const DEFAULTS: Prefs = {
   catScale: 1,
@@ -72,13 +78,14 @@ const DEFAULTS: Prefs = {
   craftExcludeEvent: true,
   joinLastLobby: true,
   catLayout: "row",
-  maxCats: 4,
+  maxCats: 8,
   remoteCatScale: 0.75,
   showPlayerNames: true,
   multiplayerPopups: true,
   receivePats: true,
   muteChats: false,
   hiddenPlayers: [],
+  catPos: {},
   equipped: {},
   emotes: [],
   favorites: [],

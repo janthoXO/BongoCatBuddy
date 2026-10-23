@@ -1,24 +1,36 @@
 import { useEffect, useRef, useState } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { LogicalSize } from "@tauri-apps/api/dpi";
 import { invoke } from "@tauri-apps/api/core";
 import { Gift, Heart, Smile } from "lucide-react";
-import { useItems, iconUrl, QUALITY_COLORS, CHEST_PRICE, type Item } from "@/lib/items";
-import { usePrefs } from "@/lib/prefs";
-import { CH, MAX_SPEECH, lobbySend, onLobbyMsg, remoteLayout, useLobby } from "@/lib/lobby";
+import { iconUrl, QUALITY_COLORS, CHEST_PRICE, type Item } from "@/lib/items";
+import type { Prefs } from "@/lib/prefs";
+import { CH, MAX_SPEECH, lobbySend, onLobbyMsg, remoteLayout, type Member } from "@/lib/lobby";
 import { CatFigure } from "@/components/CatFigure";
 import { EmoteParticle } from "@/components/EmoteParticle";
 
 const HIT_MS = 100;
 type Kind = "cosmetic" | "emote";
 
-export default function RemoteCat() {
-  const win = getCurrentWindow();
-  const id = win.label.slice(4);
-  const [prefs] = usePrefs();
-  const { catalog } = useItems();
-  const lobby = useLobby();
-  const member = lobby?.members.find((m) => m.id === id);
+export function RemoteCat({
+  member,
+  catalog,
+  prefs,
+  hovered,
+  x,
+  y,
+  drag,
+}: {
+  member: Member;
+  catalog: Map<number, Item> | null;
+  prefs: Prefs;
+  /** the mouse is over this cat's box (CSS :hover is unreliable in the click-through overlay) */
+  hovered: boolean;
+  /** box position in px inside the overlay */
+  x: number;
+  y: number;
+  /** free layout: start dragging on pointer down; `wasDragged()` is true right after a drag so the click is not a pat */
+  drag?: { onPointerDown: (e: React.PointerEvent) => void; wasDragged: () => boolean };
+}) {
+  const id = member.id;
 
   const [left, setLeft] = useState(false);
   const [right, setRight] = useState(false);
@@ -33,20 +45,10 @@ export default function RemoteCat() {
   const wasLeft = useRef(false);
   const punching = useRef({ left: false, right: false });
   const seq = useRef(0);
-  const down = useRef<[number, number] | null>(null);
-  const dragged = useRef(false);
   const live = useRef({ prefs, catalog });
   live.current = { prefs, catalog };
 
   const L = remoteLayout(prefs.remoteCatScale);
-  const free = prefs.catLayout === "free";
-
-  useEffect(() => {
-    void win.setSize(new LogicalSize(L.w, L.h)).catch(() => {});
-  }, [L.w, L.h]);
-  useEffect(() => {
-    void win.setAlwaysOnTop(prefs.alwaysOnTop).catch(() => {});
-  }, [prefs.alwaysOnTop]);
 
   const burst = () => {
     const n = 1 + Math.floor(Math.random() * 3);
@@ -59,34 +61,6 @@ export default function RemoteCat() {
       [{ transform: "scale(1)" }, { transform: "scale(1.15, 0.85)", offset: 0.2 }, { transform: "scale(0.9, 1.1)", offset: 0.55 }, { transform: "scale(1)" }],
       { duration: 700, easing: "ease-out" },
     );
-
-  // Save the position (logical px) after the window was moved in free layout.
-  useEffect(() => {
-    if (!free) return;
-    let t: ReturnType<typeof setTimeout>;
-    const un = win.onMoved(({ payload }) => {
-      clearTimeout(t);
-      t = setTimeout(async () => {
-        try {
-          const f = await win.scaleFactor();
-          let pos: Record<string, [number, number]> = {};
-          try {
-            pos = JSON.parse(localStorage.getItem("catPos") ?? "{}") ?? {};
-          } catch {
-            pos = {};
-          }
-          pos[id] = [payload.x / f, payload.y / f];
-          localStorage.setItem("catPos", JSON.stringify(pos));
-        } catch {
-          // storage unavailable
-        }
-      }, 300);
-    });
-    return () => {
-      clearTimeout(t);
-      void un.then((f) => f());
-    };
-  }, [free, id]);
 
   useEffect(() => {
     const punch = (side: "left" | "right") => {
@@ -142,8 +116,6 @@ export default function RemoteCat() {
     }));
   }, [member?.chest_ready, member?.emote_chest_ready]);
 
-  if (!member) return <main className="h-svh" />;
-
   const item = (n: number | null) => (n === null ? undefined : catalog?.get(n));
   const won = head && (catalog?.get(head.id) ?? null);
 
@@ -167,27 +139,15 @@ export default function RemoteCat() {
   ];
 
   return (
-    <main
-      className="group relative h-svh overflow-hidden"
-      style={{ width: L.w }}
+    <div
+      data-hit={member.id}
+      className="absolute"
+      style={{ left: x, top: y, width: L.w, height: L.h }}
       onContextMenu={(e) => {
         e.preventDefault();
         void invoke("open_menu").catch(() => {});
       }}
     >
-      <style>{`
-        @keyframes emote-float { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-80px); opacity: 0; } }
-        @keyframes chest-float { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-28px); opacity: 0; } }
-        @keyframes chest-idle { 50% { transform: translateY(-2px) rotate(-6deg); } }
-        @keyframes popup { 0% { transform: translate(-50%, -12px); opacity: 0; } 8%, 92% { transform: translate(-50%, 0); opacity: 1; } 100% { transform: translate(-50%, 0); opacity: 0; } }
-        @keyframes heart-float { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-50px); opacity: 0; } }
-        .emote-float { animation: emote-float 1.5s ease-out forwards; }
-        .chest-float { animation: chest-float 1s ease-out forwards; }
-        .chest-idle { animation: chest-idle 1.6s ease-in-out infinite; }
-        .popup { animation: popup 4s ease-out both; }
-        .heart-float { animation: heart-float 1s ease-out forwards; }
-      `}</style>
-
       {speech && (
         <p
           key={speech.k}
@@ -226,20 +186,9 @@ export default function RemoteCat() {
       <div
         className="pointer-events-auto absolute"
         style={{ left: (L.w - L.figW) / 2, top: L.top, width: L.figW, height: L.figH }}
-        onMouseDown={(e) => {
-          down.current = [e.clientX, e.clientY];
-          dragged.current = false;
-        }}
-        onMouseMove={(e) => {
-          const d = down.current;
-          if (!free || !d || dragged.current || !(e.buttons & 1)) return;
-          if (Math.hypot(e.clientX - d[0], e.clientY - d[1]) > 4) {
-            dragged.current = true;
-            void win.startDragging().catch(() => {});
-          }
-        }}
+        onPointerDown={drag?.onPointerDown}
         onClick={() => {
-          if (dragged.current) return;
+          if (drag?.wasDragged()) return;
           doSquish();
           burst();
           void lobbySend(CH.pat, id);
@@ -279,7 +228,7 @@ export default function RemoteCat() {
                 key={kind}
                 type="button"
                 title={`Open ${member.name}'s chest for ${CHEST_PRICE} taps`}
-                onMouseDown={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => void gift(e, kind)}
                 className={`pointer-events-auto relative flex size-8 items-center justify-center rounded-full border-2 border-outline text-foreground shadow-sticker-sm ${
                   kind === "emote" ? "bg-secondary" : "bg-card"
@@ -301,7 +250,7 @@ export default function RemoteCat() {
           )}
           <span
             className={`max-w-28 truncate rounded-full border-2 border-outline bg-card px-2 font-heading text-xs font-semibold leading-5 text-foreground shadow-sticker-sm ${
-              prefs.showPlayerNames ? "" : "opacity-0 group-hover:opacity-100"
+              prefs.showPlayerNames || hovered ? "" : "opacity-0"
             }`}
           >
             {member.name}
@@ -316,7 +265,7 @@ export default function RemoteCat() {
           </p>
         )}
       </div>
-    </main>
+    </div>
   );
 }
 

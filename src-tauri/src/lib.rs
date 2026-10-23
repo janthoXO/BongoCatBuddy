@@ -68,6 +68,17 @@ struct Owned {
     qty: u32,
 }
 
+/// Which parts of the full-screen overlay take the mouse; everywhere else clicks go through.
+#[derive(Default)]
+struct Hit {
+    /// (id, x, y, w, h) in window-relative CSS px
+    rects: Vec<(String, f64, f64, f64, f64)>,
+    /// keep the mouse while something is dragged, even if the cursor outruns the rects
+    hold: bool,
+    hovered: Option<String>,
+    passthrough: bool,
+}
+
 #[derive(Default)]
 struct Shared {
     steam: Option<Client>,
@@ -80,6 +91,7 @@ struct Shared {
     busy: Mutex<()>,
     ignore_mouse: AtomicBool,
     lobby: lobby::Lobby,
+    hit: Mutex<Hit>,
 }
 
 type Sh<'a> = State<'a, Arc<Shared>>;
@@ -112,6 +124,58 @@ fn get_inventory(state: Sh) -> Option<Vec<Owned>> {
 #[tauri::command]
 fn set_ignore_mouse(state: Sh, ignore: bool) {
     state.ignore_mouse.store(ignore, Ordering::Relaxed);
+}
+
+/// The overlay's mouse areas (window-relative CSS px) by id; `hold` while dragging.
+#[tauri::command]
+fn set_hit_rects(state: Sh, rects: Vec<(String, f64, f64, f64, f64)>, hold: bool) {
+    let mut hit = state.hit.lock().unwrap();
+    hit.rects = rects;
+    hit.hold = hold;
+}
+
+/// Turns click-through off only while the cursor is over a hit rect, and tells the overlay
+/// what is hovered (CSS :hover can't see a click-through window). Polled, so it needs no
+/// input permission. Window calls go through the main thread, where sync commands like
+/// set_hit_rects run too, so `hit` is never locked across them.
+fn update_hit(app: &AppHandle, hit: &Mutex<Hit>) {
+    let Some(w) = app.get_webview_window("main") else { return };
+    let (Ok(cursor), Ok(origin), Ok(sf)) = (app.cursor_position(), w.outer_position(), w.scale_factor()) else {
+        return;
+    };
+    let (x, y) = ((cursor.x - origin.x as f64) / sf, (cursor.y - origin.y as f64) / sf);
+    let (passthrough, hovered) = {
+        let mut hit = hit.lock().unwrap();
+        let now = hit
+            .rects
+            .iter()
+            .find(|r| x >= r.1 && x < r.1 + r.3 && y >= r.2 && y < r.2 + r.4)
+            .map(|r| r.0.clone());
+        let passthrough = now.is_none() && !hit.hold;
+        let changed = (passthrough != hit.passthrough, now != hit.hovered);
+        hit.passthrough = passthrough;
+        hit.hovered = now.clone();
+        (changed.0.then_some(passthrough), changed.1.then_some(now))
+    };
+    if let Some(p) = passthrough {
+        let _ = w.set_ignore_cursor_events(p);
+    }
+    if let Some(now) = hovered {
+        let _ = app.emit_to("main", "hover", &now);
+    }
+}
+
+/// Dev only: cursor (window px), rects and state of the click-through hit testing.
+#[cfg(debug_assertions)]
+#[tauri::command]
+fn debug_hit(app: AppHandle, state: Sh) -> String {
+    let w = app.get_webview_window("main").unwrap();
+    let (cursor, origin) = (app.cursor_position(), w.outer_position());
+    let hit = state.hit.lock().unwrap();
+    format!(
+        "cursor {cursor:?} origin {origin:?} rects {:?} hold {} hovered {:?} passthrough {}",
+        hit.rects, hit.hold, hit.hovered, hit.passthrough
+    )
 }
 
 #[tauri::command]
@@ -372,6 +436,12 @@ pub fn run() {
                 })
                 .build(app)?;
 
+            // The overlay covers the screen; it only takes the mouse over a cat (see update_hit).
+            if let Some(w) = app.get_webview_window("main") {
+                w.set_ignore_cursor_events(true)?;
+                shared.hit.lock().unwrap().passthrough = true;
+            }
+
             let taps = Arc::new(AtomicU32::new(0));
             spawn_input(handle.clone(), shared.clone(), taps.clone());
             #[cfg(debug_assertions)]
@@ -386,6 +456,7 @@ pub fn run() {
             get_catalog,
             get_inventory,
             set_ignore_mouse,
+            set_hit_rects,
             open_menu,
             open_chest,
             craft,
@@ -403,6 +474,8 @@ pub fn run() {
             lobby::lobby_configure,
             lobby::lobby_friends,
             lobby::lobby_invite,
+            #[cfg(debug_assertions)]
+            debug_hit,
             #[cfg(debug_assertions)]
             devdriver::dev_reply
         ])
@@ -461,6 +534,7 @@ fn main_loop(app: AppHandle, sh: Arc<Shared>, taps: Arc<AtomicU32>) {
 
     loop {
         thread::sleep(TICK);
+        update_hit(&app, &sh.hit);
         let n = taps.swap(0, Ordering::Relaxed).min(MAX_STAT as u32) as i32;
         if n > 0 {
             let _ = app.emit("tap", n);
