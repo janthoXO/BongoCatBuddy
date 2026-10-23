@@ -1,0 +1,86 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+    branches:
+      - main
+    paths:
+      - "src/**"
+      - "src-tauri/**"
+      - ".github/workflows/release.yml"
+
+jobs:
+  versioning:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Determine Version
+        id: version
+        uses: ./.github/actions/determine-version
+
+  package:
+    needs: versioning
+    uses: ./.github/workflows/package.yml
+    with:
+      version: ${{ needs.versioning.outputs.version }}
+
+  release:
+    needs: [versioning, package]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download bundles
+        uses: actions/download-artifact@v7
+        with:
+          pattern: bundle-*-${{ needs.versioning.outputs.version }}
+          path: ./artifacts
+          merge-multiple: true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.versioning.outputs.version }}
+          name: v${{ needs.versioning.outputs.version }}
+          files: ./artifacts/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  homebrew:
+    needs: [versioning, release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      # the cask lives on main, also for tag-triggered releases
+      - name: Checkout main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Download dmg
+        uses: actions/download-artifact@v7
+        with:
+          name: bundle-dmg-${{ needs.versioning.outputs.version }}
+          path: ./artifacts
+
+      - name: Update cask
+        run: |
+          VERSION=${{ needs.versioning.outputs.version }}
+          SHA=$(sha256sum ./artifacts/*.dmg | cut -d' ' -f1)
+          sed -i -E "s/^  version .*/  version \"$VERSION\"/; s/^  sha256 .*/  sha256 \"$SHA\"/" Casks/bongocatbuddy.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "cask: bongocatbuddy $VERSION"
+          git push
