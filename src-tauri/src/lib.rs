@@ -2,6 +2,7 @@ mod art;
 #[cfg(debug_assertions)]
 mod devdriver;
 mod inventory;
+mod lobby;
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -78,6 +79,7 @@ struct Shared {
     /// Serializes inventory changes so two clicks can't spend the same items.
     busy: Mutex<()>,
     ignore_mouse: AtomicBool,
+    lobby: lobby::Lobby,
 }
 
 type Sh<'a> = State<'a, Arc<Shared>>;
@@ -117,17 +119,18 @@ fn open_menu(app: AppHandle) -> Result<(), String> {
     show_menu(&app).map_err(|e| e.to_string())
 }
 
-/// Opens a chest ("cosmetic" or "emote") for CHEST_PRICE taps. Returns the item won.
+/// Opens a chest ("cosmetic" or "emote") for CHEST_PRICE taps, or for free when another
+/// player gifted it (they paid). Returns the item won.
 #[tauri::command]
-async fn open_chest(app: AppHandle, kind: String) -> Result<Def, String> {
+async fn open_chest(app: AppHandle, kind: String, gift: Option<bool>) -> Result<Def, String> {
+    let gift = gift.unwrap_or(false);
     blocking(app, move |app, sh| {
         let (recipe, token) = match kind.as_str() {
             "cosmetic" => (20, CHEST_TOKEN),
             "emote" => (34, EMOTE_CHEST_TOKEN),
             _ => return Err("unknown chest".into()),
         };
-        let affordable = sh.stats.lock().unwrap().as_ref().is_some_and(|s| s.score().current >= CHEST_PRICE);
-        if !affordable {
+        if !gift && !affordable(sh) {
             return Err("Not enough taps".into());
         }
         let stacks = sh.stacks.lock().unwrap().clone().ok_or("Inventory not loaded yet")?;
@@ -143,11 +146,38 @@ async fn open_chest(app: AppHandle, kind: String) -> Result<Def, String> {
             .find(|d| ![CHEST_TOKEN, EMOTE_CHEST_TOKEN, ACHIEVEMENT_TOKEN, MANUAL_TOKEN].contains(d))
             .ok_or("The chest was empty")?;
         // Like the game: taps are only spent once Steam confirmed the exchange.
-        spend(app, sh, CHEST_PRICE);
+        if !gift {
+            spend(app, sh, CHEST_PRICE);
+        }
         bump_stat(sh, "TotalItems");
         Ok(won)
     })
     .await
+}
+
+/// Pays CHEST_PRICE taps to open another player's ready chest ("cosmetic" or "emote") for them.
+#[tauri::command]
+async fn gift_chest(app: AppHandle, target: String, kind: String) -> Result<(), String> {
+    blocking(app, move |app, sh| {
+        let kind = match kind.as_str() {
+            "cosmetic" => 0,
+            "emote" => 1,
+            _ => return Err("unknown chest".into()),
+        };
+        if !affordable(sh) {
+            return Err("Not enough taps".into());
+        }
+        if !lobby::send_current(sh.steam.as_ref().unwrap(), &sh.lobby, 4, &format!("{target}:{kind}")) {
+            return Err("Not in a lobby".into());
+        }
+        spend(app, sh, CHEST_PRICE);
+        Ok(())
+    })
+    .await
+}
+
+fn affordable(sh: &Shared) -> bool {
+    sh.stats.lock().unwrap().as_ref().is_some_and(|s| s.score().current >= CHEST_PRICE)
 }
 
 /// Exchanges duplicates: `items` (def, qty) must add up to a multiple of 10 and all
@@ -360,6 +390,19 @@ pub fn run() {
             open_chest,
             craft,
             use_emote,
+            gift_chest,
+            lobby::get_lobby,
+            lobby::lobby_create,
+            lobby::lobby_join,
+            lobby::lobby_join_id,
+            lobby::lobby_join_random,
+            lobby::lobby_list,
+            lobby::lobby_leave,
+            lobby::lobby_set_me,
+            lobby::lobby_send,
+            lobby::lobby_configure,
+            lobby::lobby_friends,
+            lobby::lobby_invite,
             #[cfg(debug_assertions)]
             devdriver::dev_reply
         ])
@@ -409,6 +452,8 @@ fn main_loop(app: AppHandle, sh: Arc<Shared>, taps: Arc<AtomicU32>) {
     let (mut last_drop, mut last_promo, mut last_manual) = (None::<Instant>, None::<Instant>, None::<Instant>);
     let due = |t: Option<Instant>, every: Duration| t.is_none_or(|t| t.elapsed() >= every);
 
+    let mut last_poll = Instant::now();
+    let _callbacks = sh.steam.as_ref().map(|c| lobby::register(c, &app));
     if sh.steam.is_some() {
         let (app, sh) = (app.clone(), sh.clone());
         thread::spawn(move || refresh(&app, &sh));
@@ -423,6 +468,7 @@ fn main_loop(app: AppHandle, sh: Arc<Shared>, taps: Arc<AtomicU32>) {
         }
         let Some(client) = &sh.steam else { continue };
         client.run_callbacks();
+        lobby::tick(client, &app, &sh.lobby, n as u32, &mut last_poll);
         let us = client.user_stats();
 
         if sh.catalog.lock().unwrap().is_none()

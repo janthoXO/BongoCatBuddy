@@ -175,6 +175,7 @@ dependencies = [
  "png",
  "rdev",
  "serde",
+ "serde_json",
  "steamworks",
  "steamworks-sys",
  "tauri",
