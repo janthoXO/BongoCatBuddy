@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Gift, Loader2 } from "lucide-react";
+import { Clock, Gift, Loader2, PawPrint, Smile } from "lucide-react";
 import { CHEST_PRICE } from "@/lib/items";
 import type { Prefs } from "@/lib/prefs";
 
@@ -87,33 +87,55 @@ export default function Chest({
     }
   };
 
+  const emote = kind === "emote";
+  const title = ready && !afford ? `Need ${CHEST_PRICE} taps` : emote ? "Emote chest" : "Cosmetic chest";
+
   return (
     <div className="absolute flex flex-col items-center" style={style} onMouseDown={(e) => e.stopPropagation()}>
       <button
         type="button"
         onClick={click}
-        title={kind === "emote" ? "Emote chest" : "Cosmetic chest"}
-        className={`relative flex size-12 flex-col items-center justify-center rounded-full border border-border bg-background/80 text-xs font-medium tabular-nums text-foreground ${
-          ready && !afford ? "opacity-50" : ""
-        } ${shake ? "chest-shake" : ""} ${fx ? "chest-pop" : ""}`}
+        title={title}
+        className={`relative flex size-11 items-center justify-center rounded-full border-2 border-outline text-foreground shadow-sticker-sm ${
+          emote ? "bg-secondary" : "bg-card"
+        } ${ready && !afford ? "opacity-60 grayscale" : ""} ${shake ? "chest-shake" : ""} ${fx ? "chest-pop" : ""}`}
       >
         {busy ? (
-          <Loader2 className="size-4 animate-spin" />
+          <Loader2 className="size-5 animate-spin" />
         ) : ready ? (
-          <>
-            <Gift className="size-4" />
-            <span className="text-[10px] leading-none">{CHEST_PRICE}</span>
-          </>
+          <Gift className="chest-idle size-6 text-primary" />
         ) : (
-          mmss(t)
+          <span className="flex flex-col items-center gap-px font-heading text-[10px] leading-none tabular-nums text-muted-foreground">
+            <Clock className="size-3" />
+            {mmss(t)}
+          </span>
+        )}
+        {emote && (
+          <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full border-2 border-outline bg-card">
+            <Smile className="size-2.5" />
+          </span>
         )}
         {fx > 0 && (
-          <span className="chest-float pointer-events-none absolute -top-2 text-xs font-bold text-red-500">
+          <span className="chest-float pointer-events-none absolute -top-3 font-heading text-xs font-bold text-destructive">
             -{CHEST_PRICE}
           </span>
         )}
       </button>
-      {err && <p className="mt-0.5 w-14 break-words text-center text-[10px] leading-tight text-red-500">{err}</p>}
+      {ready && !busy && (
+        <span
+          className={`-mt-2 flex items-center gap-0.5 rounded-full border-2 border-outline bg-card px-1.5 font-heading text-[10px] leading-4 tabular-nums ${
+            afford ? "" : "opacity-60 grayscale"
+          }`}
+        >
+          {CHEST_PRICE}
+          <PawPrint className="size-2.5 text-primary" />
+        </span>
+      )}
+      {err && (
+        <p className="mt-0.5 max-w-24 break-words rounded-full border-2 border-destructive bg-card px-1.5 text-center text-[10px] leading-tight text-destructive">
+          {err}
+        </p>
+      )}
     </div>
   );
 }

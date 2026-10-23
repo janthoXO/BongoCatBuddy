@@ -1,37 +1,28 @@
 import { useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize } from "@tauri-apps/api/dpi";
-import { Menu } from "lucide-react";
+import { Menu, PawPrint } from "lucide-react";
 import { useItems, artUrl, CHEST_TOKEN, EMOTE_CHEST_TOKEN, iconUrl, QUALITY_COLORS, type Item } from "@/lib/items";
 import { MAX_WHEEL_EMOTES, usePrefs } from "@/lib/prefs";
 import Chest from "./Chest";
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import catLeft from "@/assets/placeholder/catLeft.svg";
-import catLeftPunch from "@/assets/placeholder/catLeftPunch.svg";
-import catRight from "@/assets/placeholder/catRight.svg";
-import catRightPunch from "@/assets/placeholder/catRightPunch.svg";
-import bongoLeft from "@/assets/placeholder/bongoLeft.svg";
-import bongoLeftPunch from "@/assets/placeholder/bongoLeftPunch.svg";
-import bongoRight from "@/assets/placeholder/bongoRight.svg";
-import bongoRightPunch from "@/assets/placeholder/bongoRightPunch.svg";
+import { CatFigure, FIGURE_H, FIGURE_W } from "@/components/CatFigure";
 
 const UNIT = 1.25; // px per unit at catScale 1
 const HIT_MS = 100;
 
-// Cat box in units: origin (the layer coordinate 0,0) sits at (OX, OY) from the box's top-left.
-const BOX_W = 154;
-const BOX_H = 204;
-const OX = 80;
-const OY = 109;
+// Cat box in units = the figure (see CatFigure).
+const BOX_W = FIGURE_W;
+const BOX_H = FIGURE_H;
 // Fixed px (not scaled) around the cat box.
-const SIDE = 56; // chest column on each side
-const WHEEL_R = 80;
-const WHEEL_H = WHEEL_R + 14;
-const POPUP_H = 48;
-const TOP = POPUP_H + WHEEL_H;
-const BOTTOM = 64; // score + notice
-const WHEEL_W = 2 * WHEEL_R + 28;
+const SIDE = 30; // each side margin; the chests sit in the score row, outside the cat
+const TOP = 0; // nothing reserved above the box: the popup and wheel overlap its empty hat area
+const WHEEL_R = 66;
+const WHEEL_CY = 100; // wheel arc center, below the box top (around the head)
+const WHEEL_W = 2 * WHEEL_R + 26;
+const CHEST_H = 52; // bubble + price chip
+const BOTTOM = CHEST_H + 6; // score row with the chests on both ends (+ notice)
 
 export const layout = (scale: number) => {
   const u = UNIT * scale;
@@ -46,27 +37,6 @@ export const layout = (scale: number) => {
 
 type Score = { current: number; lifetime: number };
 
-const placeholders = {
-  catLeft, catLeftPunch, catRight, catRightPunch,
-  bongoLeft, bongoLeftPunch, bongoRight, bongoRightPunch,
-};
-type Name = keyof typeof placeholders;
-type Art = Record<Name, string>;
-
-const part = (n: Name) => n.replace(/^(cat|bongo)/, "");
-
-// Layers in draw order (first = back); `show` says when it is visible.
-const layers = (l: boolean, r: boolean) => [
-  { n: "bongoLeftPunch", x: -16, y: -31, show: l },
-  { n: "catLeft", x: -6, y: 10, show: !l },
-  { n: "catLeftPunch", x: -6, y: 10, show: l },
-  { n: "bongoLeft", x: -16, y: -31, show: !l },
-  { n: "bongoRight", x: -16, y: -31, show: !r },
-  { n: "bongoRightPunch", x: -16, y: -31, show: r },
-  { n: "hat", x: 10, y: 45, show: true },
-  { n: "catRight", x: -6, y: 10, show: !r },
-  { n: "catRightPunch", x: -6, y: 10, show: r },
-] as const;
 
 type Particle = { k: number; item: Item };
 type Won = { k: number; id: number };
@@ -87,14 +57,11 @@ function EmoteParticle({ item, left, top }: { item: Item; left: number; top: num
 export default function Overlay() {
   const [prefs, update] = usePrefs();
   const { catalog } = useItems();
-  const [art, setArt] = useState<Art>(placeholders);
   const [score, setScore] = useState<Score | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const [left, setLeft] = useState(false);
   const [right, setRight] = useState(false);
-  const [bad, setBad] = useState<Set<string>>(new Set());
-  const [hat, setHat] = useState(true);
   const [wheel, setWheel] = useState(false);
   const [particles, setParticles] = useState<Particle[]>([]);
   const [queue, setQueue] = useState<Won[]>([]);
@@ -107,10 +74,7 @@ export default function Overlay() {
     return it && it.qty > 0 ? it : undefined;
   };
   const skin = owned(prefs.equipped.skin);
-  const bongos = owned(prefs.equipped.bongos);
   const hatItem = owned(prefs.equipped.hat);
-  const hatSrc = hatItem ? artUrl(hatItem) : undefined;
-  useEffect(() => setHat(true), [hatSrc]);
 
   const L = layout(prefs.catScale);
 
@@ -125,16 +89,6 @@ export default function Overlay() {
   }, [prefs.ignoreMouse]);
 
   useEffect(() => {
-    invoke<string | null>("get_art")
-      .then((dir) => {
-        if (dir)
-          setArt(
-            Object.fromEntries(
-              Object.keys(placeholders).map((n) => [n, convertFileSrc(`${dir}/${n}.png`)]),
-            ) as Art,
-          );
-      })
-      .catch(() => {});
     invoke<Score | null>("get_score").then(setScore).catch(() => {});
     invoke<string | null>("get_notice").then(setError).catch(() => {});
 
@@ -158,21 +112,11 @@ export default function Overlay() {
     return () => unlisten.forEach((p) => p.then((f) => f()));
   }, []);
 
-  // Remote art for equipped cosmetics, falling back to the base art per layer on load errors.
-  const srcOf = (n: Name) => {
-    const it = n.startsWith("cat") ? skin : bongos;
-    const url = it && artUrl(it, part(n));
-    return url && !bad.has(url) ? url : art[n];
-  };
-  const markBad = (n: Name) => {
-    const it = n.startsWith("cat") ? skin : bongos;
-    if (it) setBad((s) => new Set(s).add(artUrl(it, part(n))));
-  };
 
   const onWon = (id: number) => {
     setQueue((q) => [...q, { k: ++seq.current, id }]);
     const it = catalog?.get(id);
-    if (prefs.autoEquipDrops && (it?.slot === "hat" || it?.slot === "skin" || it?.slot === "bongos"))
+    if (prefs.autoEquipDrops && (it?.slot === "hat" || it?.slot === "skin"))
       update({ equipped: { ...prefs.equipped, [it.slot]: id } });
   };
   const head = queue[0];
@@ -200,7 +144,9 @@ export default function Overlay() {
   };
 
   const boxLeft = (L.w - L.boxW) / 2;
-  const chestTop = TOP + 140 * L.u - 24;
+  // Chests flank the score pill under the cat, so they never cover the art.
+  const chestTop = TOP + L.boxH + 2;
+  const chestX = 4;
   const notice = flash ?? error;
   const openMenu = () => void invoke("open_menu").catch(() => {});
 
@@ -212,6 +158,12 @@ export default function Overlay() {
         @keyframes chest-shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
         @keyframes chest-pop { 40% { transform: scale(1.25); } }
         @keyframes chest-float { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-28px); opacity: 0; } }
+        @keyframes popup { 0% { transform: translate(-50%, -12px); opacity: 0; } 8%, 92% { transform: translate(-50%, 0); opacity: 1; } 100% { transform: translate(-50%, 0); opacity: 0; } }
+        @keyframes wheel-pop { from { transform: scale(0); opacity: 0; } 70% { transform: scale(1.15); } to { transform: scale(1); opacity: 1; } }
+        @keyframes chest-idle { 50% { transform: translateY(-2px) rotate(-6deg); } }
+        .popup { animation: popup 4s ease-out both; }
+        .wheel-pop { animation: wheel-pop 0.25s ease-out both; }
+        .chest-idle { animation: chest-idle 1.6s ease-in-out infinite; }
         .bob { animation: bob 2s ease-in-out infinite; }
         .emote-float { animation: emote-float 1.5s ease-out forwards; }
         .chest-shake { animation: chest-shake 0.4s; }
@@ -221,18 +173,22 @@ export default function Overlay() {
 
       {won !== undefined && head && (
         <div
-          className="absolute left-1/2 top-1 flex -translate-x-1/2 items-center gap-2 rounded-lg border-2 bg-background/90 px-2 py-1"
-          style={{
-            borderColor: won?.quality ? QUALITY_COLORS[won.quality] : undefined,
-            height: POPUP_H - 4,
-            maxWidth: L.w - 8,
-          }}
+          key={head.k}
+          className="popup pointer-events-none absolute left-1/2 top-1 z-20 flex items-center gap-2 overflow-hidden rounded-xl border-2 border-outline bg-card py-1 pl-3 pr-3 shadow-sticker"
+          style={{ maxWidth: L.w - 8 }}
         >
+          <span
+            className="absolute inset-y-0 left-0 w-1.5"
+            style={{ background: won?.quality ? QUALITY_COLORS[won.quality] : "var(--border)" }}
+          />
           {won ? <PopupIcon item={won} /> : null}
           <div className="min-w-0 leading-tight">
-            <p className="text-[10px] text-muted-foreground">New item!</p>
-            <p className="truncate text-xs font-semibold" style={{ color: won?.color }}>
-              {won?.name ?? `#${head.id}`}
+            <p className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">New item!</p>
+            <p className="flex items-center gap-1 text-xs font-semibold text-foreground">
+              <span className="truncate font-heading">{won?.name ?? `#${head.id}`}</span>
+              {won?.quality && (
+                <span className="size-2 shrink-0 rounded-full" style={{ background: QUALITY_COLORS[won.quality] }} />
+              )}
             </p>
           </div>
         </div>
@@ -240,14 +196,14 @@ export default function Overlay() {
 
       <div
         className="pointer-events-none absolute left-0"
-        style={{ top: TOP - WHEEL_H, width: L.w, height: WHEEL_H + L.boxH }}
+        style={{ top: 0, width: L.w, height: TOP + L.boxH }}
         onMouseEnter={() => setWheel(true)}
         onMouseLeave={() => setWheel(false)}
       >
         {wheel && wheelItems.length > 0 && (
           <div
             className="pointer-events-auto absolute"
-            style={{ left: (L.w - WHEEL_W) / 2, top: 0, width: WHEEL_W, height: WHEEL_H }}
+            style={{ left: (L.w - WHEEL_W) / 2, top: TOP + WHEEL_CY - WHEEL_R - 13, width: WHEEL_W, height: WHEEL_R + 26 }}
           >
             {wheelItems.map((it, i) => {
               const th = (Math.PI * (i + 1)) / (wheelItems.length + 1);
@@ -260,16 +216,17 @@ export default function Overlay() {
                     e.stopPropagation();
                     useEmote(it);
                   }}
-                  className="absolute flex size-7 items-center justify-center rounded-full border bg-background/90"
+                  className="wheel-pop absolute flex size-[26px] items-center justify-center rounded-full border-2 bg-card shadow-sticker-sm"
                   style={{
-                    left: WHEEL_W / 2 - WHEEL_R * Math.cos(th) - 14,
-                    top: WHEEL_H - WHEEL_R * Math.sin(th) - 14,
-                    borderColor: it.quality ? QUALITY_COLORS[it.quality] : undefined,
+                    left: WHEEL_W / 2 - WHEEL_R * Math.cos(th) - 13,
+                    top: WHEEL_R + 13 - WHEEL_R * Math.sin(th) - 13,
+                    animationDelay: `${i * 40}ms`,
+                    borderColor: it.quality ? QUALITY_COLORS[it.quality] : "var(--outline)",
                   }}
                 >
-                  <img src={iconUrl(it)} draggable={false} className="size-5 object-contain" />
+                  <img src={iconUrl(it)} draggable={false} className="size-4 object-contain" />
                   {it.slot === "consumable" && (
-                    <span className="absolute -bottom-1 -right-1 rounded-full bg-background px-1 text-[9px] leading-tight tabular-nums">
+                    <span className="absolute -bottom-1 -right-1 rounded-full border border-outline bg-card px-1 text-[9px] leading-tight tabular-nums">
                       {it.qty}
                     </span>
                   )}
@@ -280,38 +237,21 @@ export default function Overlay() {
         )}
         <div
           className={`pointer-events-auto absolute ${prefs.catBobbing ? "bob" : ""}`}
-          style={{ left: boxLeft, top: WHEEL_H, width: L.boxW, height: L.boxH }}
+          style={{ left: boxLeft, top: TOP, width: L.boxW, height: L.boxH }}
           onContextMenu={(e) => {
             e.preventDefault();
             openMenu();
           }}
         >
-          <div
+          <CatFigure
             {...(prefs.lockPosition ? {} : { "data-tauri-drag-region": true })}
-            className="relative size-full"
-            style={{ transform: prefs.flip ? "scaleX(-1)" : undefined }}
-          >
-            {layers(left, right).map((l) => {
-              const isHat = l.n === "hat";
-              if (isHat && (!hatSrc || !hat)) return null;
-              const src = isHat ? hatSrc : srcOf(l.n);
-              return (
-                <img
-                  key={l.n}
-                  src={src}
-                  onError={() => (isHat ? setHat(false) : markBad(l.n))}
-                  draggable={false}
-                  className={`pointer-events-none absolute ${l.show ? "" : "invisible"}`}
-                  style={{
-                    left: (OX + l.x - 64) * L.u,
-                    top: (OY - l.y - 64) * L.u,
-                    width: 128 * L.u,
-                    height: 128 * L.u,
-                  }}
-                />
-              );
-            })}
-          </div>
+            unit={L.u}
+            skin={skin}
+            hat={hatItem}
+            left={left}
+            right={right}
+            flip={prefs.flip}
+          />
         </div>
       </div>
 
@@ -321,7 +261,7 @@ export default function Overlay() {
         score={score?.current ?? null}
         prefs={prefs}
         onWon={onWon}
-        style={{ left: 4, top: chestTop }}
+        style={{ left: chestX, top: chestTop }}
       />
       {prefs.showEmoteChest && (
         <Chest
@@ -330,35 +270,45 @@ export default function Overlay() {
           score={score?.current ?? null}
           prefs={prefs}
           onWon={onWon}
-          style={{ right: 4, top: chestTop }}
+          style={{ right: chestX, top: chestTop }}
         />
       )}
 
       {particles.map((p) => (
-        <EmoteParticle key={p.k} item={p.item} left={L.w / 2 - 32} top={TOP - 32} />
+        <EmoteParticle key={p.k} item={p.item} left={L.w / 2 - 32} top={TOP + WHEEL_CY - 32} />
       ))}
 
       <div
         className="absolute left-0 flex flex-col items-center gap-1"
         style={{ top: TOP + L.boxH + 2, width: L.w }}
       >
-        <span
-          title={score ? `Lifetime: ${score.lifetime}` : undefined}
-          className={`relative rounded-full bg-background/80 px-2 font-medium tabular-nums text-foreground ${
-            prefs.hideCounter ? "opacity-0 group-hover:opacity-100" : ""
-          }`}
-        >
-          {score ? score.current.toLocaleString("en-US").replace(/,/g, " ") : "…"}
+        <div className="flex items-center gap-1">
+          <span
+            title={score ? `Lifetime: ${score.lifetime}` : undefined}
+            className={`flex items-center gap-1 rounded-full border-2 border-outline bg-card px-2 font-heading text-sm font-semibold leading-5 tabular-nums text-foreground shadow-sticker-sm ${
+              prefs.hideCounter ? "opacity-0 group-hover:opacity-100" : ""
+            }`}
+          >
+            <PawPrint className="size-3.5 text-primary" />
+            {score ? score.current.toLocaleString("en-US").replace(/,/g, " ") : "…"}
+          </span>
           <button
             type="button"
             title="Menu"
             onClick={openMenu}
-            className="absolute left-full top-1/2 ml-1 -translate-y-1/2 rounded-full bg-background/80 p-0.5 text-muted-foreground opacity-0 group-hover:opacity-100"
+            className="flex size-6 items-center justify-center rounded-full border-2 border-outline bg-card text-foreground opacity-0 shadow-sticker-sm group-hover:opacity-100"
           >
-            <Menu className="size-3.5" />
+            <Menu className="size-3" />
           </button>
-        </span>
-        {notice && <p className="px-2 text-center text-xs text-muted-foreground">{notice}</p>}
+        </div>
+        {notice && (
+          <p
+            className="max-w-full truncate rounded-full border-2 border-border bg-card px-2 text-center text-[10px] leading-4 text-muted-foreground"
+            style={{ maxWidth: L.w - 8 }}
+          >
+            {notice}
+          </p>
+        )}
       </div>
     </main>
   );
@@ -367,9 +317,9 @@ export default function Overlay() {
 function PopupIcon({ item }: { item: Item }) {
   const [ok, setOk] = useState(true);
   return ok ? (
-    <img src={iconUrl(item)} onError={() => setOk(false)} draggable={false} className="size-8 object-contain" />
+    <img src={iconUrl(item)} onError={() => setOk(false)} draggable={false} className="size-9 object-contain" />
   ) : (
-    <span className="flex size-8 items-center justify-center rounded bg-muted text-xs font-bold">
+    <span className="flex size-9 items-center justify-center rounded bg-muted text-xs font-bold">
       {item.name.split(" ").map((w) => w[0]).join("").slice(0, 2)}
     </span>
   );
