@@ -15,7 +15,8 @@ fn copy_steam_lib() {
         "windows" => ("win64", "steam_api64.dll"),
         _ => return,
     };
-    let lock = fs::read_to_string("Cargo.lock").unwrap();
+    // git on Windows may check out CRLF
+    let lock = fs::read_to_string("Cargo.lock").unwrap().replace("\r\n", "\n");
     let version = lock
         .split("name = \"steamworks-sys\"\nversion = \"")
         .nth(1)
@@ -23,7 +24,7 @@ fn copy_steam_lib() {
         .expect("steamworks-sys missing from Cargo.lock");
     let cargo_home = env::var("CARGO_HOME")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(env::var("HOME").unwrap()).join(".cargo"));
+        .unwrap_or_else(|_| PathBuf::from(env::var("HOME").or_else(|_| env::var("USERPROFILE")).unwrap()).join(".cargo"));
     let src = fs::read_dir(cargo_home.join("registry/src"))
         .unwrap()
         .flatten()
