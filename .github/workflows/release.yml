@@ -51,7 +51,7 @@ jobs:
         with:
           tag_name: v${{ needs.versioning.outputs.version }}
           name: v${{ needs.versioning.outputs.version }}
-          files: ./artifacts/*
+          files: ./artifacts/*/* # dmg/, nsis/
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -78,7 +78,7 @@ jobs:
       - name: Update cask
         run: |
           VERSION=${{ needs.versioning.outputs.version }}
-          SHA=$(sha256sum ./artifacts/*.dmg | cut -d' ' -f1)
+          SHA=$(sha256sum ./artifacts/dmg/*.dmg | cut -d' ' -f1)
           sed -i -E "s/^  version .*/  version \"$VERSION\"/; s/^  sha256 .*/  sha256 \"$SHA\"/" Casks/bongocatbuddy.rb
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
