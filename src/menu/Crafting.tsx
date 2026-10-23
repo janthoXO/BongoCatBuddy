@@ -1,14 +1,19 @@
 import { useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { MinusIcon, PlusIcon } from "lucide-react";
+import { MinusIcon, PlusIcon, PartyPopperIcon } from "lucide-react";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { CRAFT_INPUT, CRAFT_RECIPES, QUALITY_COLORS, useItems, type Item, type Quality } from "@/lib/items";
+import { CRAFT_INPUT, CRAFT_RECIPES, useItems, type Item, type Quality } from "@/lib/items";
 import { usePrefs } from "@/lib/prefs";
-import { ItemIcon } from "./ItemIcon";
+import { cn } from "@/lib/utils";
+import { ItemIcon, QualityDot, qualityBadge, tint } from "./ItemIcon";
 
 type Group = "cosmetics" | "emote";
 const GROUPS: Record<Group, string> = { cosmetics: "Cosmetics", emote: "Emotes" };
@@ -40,8 +45,9 @@ export function Crafting() {
 
   if (!owned || !catalog) {
     return (
-      <div className="flex flex-1 items-center justify-center">
-        <Spinner className="size-6" />
+      <div className="flex flex-1 flex-col gap-3">
+        <Skeleton className="h-9 w-full rounded-full" />
+        <Skeleton className="flex-1 rounded-xl" />
       </div>
     );
   }
@@ -74,54 +80,86 @@ export function Crafting() {
     }
   }
 
+  const dupes = (q: Quality) =>
+    (owned ?? [])
+      .filter(
+        (i) =>
+          i.craftGroup === group &&
+          i.craftQuality === q &&
+          (prefs.craftAllowFavorites || !prefs.favorites.includes(i.id)) &&
+          !(prefs.craftExcludeEvent && i.event),
+      )
+      .reduce((s, i) => s + i.qty - 1, 0);
+  // icons of the items in the current batch of 10
+  const units = candidates.flatMap((i) => Array<Item>(amount(i)).fill(i));
+  const filled = total === 0 ? 0 : total % CRAFT_INPUT || CRAFT_INPUT;
+  const batch = units.slice(Math.max(0, total - filled), total);
+  const tabCls =
+    "h-8 flex-none gap-1.5 rounded-full px-3 font-heading text-sm capitalize text-foreground/70 after:hidden data-active:border-outline data-active:bg-primary data-active:text-primary-foreground data-active:shadow-sticker-sm";
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <p className="text-sm text-muted-foreground">
-        Trade 10 duplicates of one quality for a random item of the next quality. One copy of each item is always kept.
+        Trade 10 duplicates for a random item of the next quality. One copy of each item always stays with you.
       </p>
-      <div className="flex flex-wrap gap-3">
-        <ToggleGroup
-          variant="outline"
-          value={[group]}
-          onValueChange={(v) => v[0] && (setGroup(v[0] as Group), setSlotted({}))}
+      <div className="flex flex-wrap items-center gap-3">
+        <Tabs
+          value={group}
+          onValueChange={(v) => (setGroup(v as Group), setSlotted({}))}
         >
-          {(Object.keys(GROUPS) as Group[]).map((g) => (
-            <ToggleGroupItem key={g} value={g}>
-              {GROUPS[g]}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-        <ToggleGroup
-          variant="outline"
-          value={[quality]}
-          onValueChange={(v) => v[0] && (setQuality(v[0] as Quality), setSlotted({}))}
-        >
-          {QUALITY_OPTIONS.map((q) => (
-            <ToggleGroupItem key={q} value={q} style={{ color: QUALITY_COLORS[q] }} className="capitalize">
-              {q}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
+          <TabsList className="group-data-horizontal/tabs:h-auto gap-1 rounded-full border-2 border-border bg-card p-1">
+            {(Object.keys(GROUPS) as Group[]).map((g) => (
+              <TabsTrigger key={g} value={g} className={tabCls}>
+                {GROUPS[g]}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+        <Tabs value={quality} onValueChange={(v) => (setQuality(v as Quality), setSlotted({}))}>
+          <TabsList className="group-data-horizontal/tabs:h-auto gap-1 rounded-full border-2 border-border bg-card p-1">
+            {QUALITY_OPTIONS.map((q) => {
+              const n = dupes(q);
+              return (
+                <TabsTrigger key={q} value={q} className={cn(tabCls, n === 0 && "opacity-50")}>
+                  <QualityDot quality={q} />
+                  {q}
+                  <Badge variant="secondary" className="h-4 px-1.5 text-[10px] tabular-nums text-secondary-foreground">
+                    {n}
+                  </Badge>
+                </TabsTrigger>
+              );
+            })}
+          </TabsList>
+        </Tabs>
       </div>
 
-      <ScrollArea className="min-h-0 flex-1 rounded-lg border">
+      <ScrollArea className="min-h-0 flex-1 rounded-xl border-2 border-border bg-card">
         {candidates.length === 0 ? (
-          <p className="p-6 text-center text-sm text-muted-foreground">No duplicates in this category.</p>
+          <Empty>
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <PartyPopperIcon />
+              </EmptyMedia>
+              <EmptyTitle>No duplicates here</EmptyTitle>
+              <EmptyDescription>Duplicates of this quality will show up here.</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         ) : (
-          <ul className="flex flex-col divide-y">
+          <ul className="flex flex-col divide-y divide-border">
             {candidates.map((i) => (
-              <li key={i.id} className="flex items-center gap-3 p-2">
-                <ItemIcon item={i} className="size-10" />
-                <span className="min-w-0 flex-1 truncate text-sm" style={{ color: i.color }}>
-                  {i.name}
+              <li key={i.id} className="flex items-center gap-3 px-3 py-1.5">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-lg" style={tint(i.quality)}>
+                  <ItemIcon item={i} className="size-9" />
                 </span>
-                <span className="text-xs text-muted-foreground">owned {i.qty}</span>
-                <div className="flex items-center gap-1">
-                  <Button size="icon-sm" variant="outline" aria-label="Fewer" disabled={amount(i) === 0} onClick={() => set(i, amount(i) - 1)}>
+                <span className="min-w-0 flex-1 truncate text-sm font-semibold">{i.name}</span>
+                <QualityDot quality={i.quality} />
+                <span className="w-16 text-right text-xs text-muted-foreground tabular-nums">owned {i.qty}</span>
+                <div className="flex items-center gap-1 rounded-full bg-muted p-0.5">
+                  <Button size="icon-sm" variant="ghost" className="rounded-full" aria-label="Fewer" disabled={amount(i) === 0} onClick={() => set(i, amount(i) - 1)}>
                     <MinusIcon />
                   </Button>
-                  <span className="w-6 text-center text-sm tabular-nums">{amount(i)}</span>
-                  <Button size="icon-sm" variant="outline" aria-label="More" disabled={amount(i) >= i.qty - 1} onClick={() => set(i, amount(i) + 1)}>
+                  <span className="w-6 text-center text-sm font-semibold tabular-nums">{amount(i)}</span>
+                  <Button size="icon-sm" variant="ghost" className="rounded-full" aria-label="More" disabled={amount(i) >= i.qty - 1} onClick={() => set(i, amount(i) + 1)}>
                     <PlusIcon />
                   </Button>
                 </div>
@@ -131,48 +169,74 @@ export function Crafting() {
         )}
       </ScrollArea>
 
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between text-sm">
-          <span>
-            slotted: {total} · exchanges possible: {exchanges}
-          </span>
-          <span className="text-muted-foreground">
-            {total % CRAFT_INPUT}/{CRAFT_INPUT} to next
-          </span>
-        </div>
-        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-          <div
-            className="h-full bg-primary transition-all"
-            style={{ width: `${((total % CRAFT_INPUT) / CRAFT_INPUT) * 100}%` }}
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            onClick={() => setSlotted(Object.fromEntries(candidates.map((i) => [i.id, i.qty - 1])))}
-          >
-            Fill duplicates
-          </Button>
-          <Button variant="outline" onClick={() => setSlotted({})}>
-            Clear
-          </Button>
-          <Button className="ml-auto" disabled={exchanges === 0 || running || recipe === undefined} onClick={exchange}>
-            {running && <Spinner data-icon="inline-start" />}
-            Exchange{exchanges > 0 ? ` (${exchanges})` : ""}
-          </Button>
-        </div>
-        {won.length > 0 && (
-          <div className="flex flex-wrap items-center gap-3 rounded-lg border p-2">
-            <span className="text-sm text-muted-foreground">You got</span>
-            {won.map((i, n) => (
-              <span key={n} className="flex items-center gap-1.5 text-sm" style={{ color: i.color }}>
-                <ItemIcon item={i} className="size-8" />
-                {i.name}
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1" role="img" aria-label={`${filled} of ${CRAFT_INPUT} slots filled`}>
+          {Array.from({ length: CRAFT_INPUT }, (_, n) => {
+            const it = batch[n];
+            return (
+              <span
+                key={n}
+                className={cn(
+                  "flex size-8 items-center justify-center overflow-hidden rounded-full border-2 transition-colors",
+                  it ? "border-outline bg-card" : "border-dashed border-border bg-muted/60",
+                )}
+              >
+                {it && <ItemIcon item={it} className="size-6" />}
               </span>
+            );
+          })}
+        </div>
+        <span className="font-heading text-sm font-semibold tabular-nums">
+          {filled}/{CRAFT_INPUT}
+        </span>
+        {exchanges > 1 && <Badge className="tabular-nums">×{exchanges} exchanges</Badge>}
+      </div>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="secondary"
+          className="h-9 rounded-full px-4"
+          onClick={() => setSlotted(Object.fromEntries(candidates.map((i) => [i.id, i.qty - 1])))}
+        >
+          Fill duplicates
+        </Button>
+        <Button variant="ghost" className="h-9 rounded-full px-4" onClick={() => setSlotted({})}>
+          Clear
+        </Button>
+        <Button
+          className="ml-auto h-10 rounded-full border-2 border-outline px-6 font-heading text-base shadow-sticker active:translate-y-0.5 active:shadow-sticker-sm disabled:shadow-none"
+          disabled={exchanges === 0 || running || recipe === undefined}
+          onClick={exchange}
+        >
+          {running && <Spinner data-icon="inline-start" />}
+          Exchange{exchanges > 0 ? ` ×${exchanges}` : ""}
+        </Button>
+      </div>
+
+      <Dialog open={won.length > 0} onOpenChange={(o) => !o && setWon([])}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-heading text-xl">You got!</DialogTitle>
+            <DialogDescription>New items were added to your inventory.</DialogDescription>
+          </DialogHeader>
+          <div className="flex max-h-72 flex-wrap justify-center gap-3 overflow-y-auto p-1">
+            {won.map((i, n) => (
+              <div
+                key={n}
+                className="flex w-32 flex-col items-center gap-1.5 rounded-xl border-2 border-border p-3 text-center"
+                style={tint(i.quality)}
+              >
+                <ItemIcon item={i} className="size-20" />
+                <span className="font-heading text-sm leading-tight font-semibold">{i.name}</span>
+                {i.quality && (
+                  <Badge variant="outline" className="capitalize" style={qualityBadge(i.quality)}>
+                    {i.quality}
+                  </Badge>
+                )}
+              </div>
             ))}
           </div>
-        )}
-      </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
