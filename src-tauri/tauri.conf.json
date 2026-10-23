@@ -12,18 +12,37 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "BongoCatBuddy",
-        "width": 800,
-        "height": 600
+        "width": 220,
+        "height": 280,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "shadow": false
       }
     ],
     "security": {
-      "csp": null
-    }
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "$APPDATA/art/*"
+        ]
+      }
+    },
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": true,
     "targets": "all",
+    "macOS": {
+      "files": {
+        "MacOS/libsteam_api.dylib": "target/release/libsteam_api.dylib"
+      }
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
