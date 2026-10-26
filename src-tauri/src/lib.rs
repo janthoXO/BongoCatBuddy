@@ -16,7 +16,7 @@ use rdev::{listen, Button, EventType, Key};
 use serde::Serialize;
 use steamworks::{AppId, Client};
 use tauri::menu::{Menu, MenuItem};
-use tauri::tray::TrayIconBuilder;
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 const APP_ID: u32 = 3419430;
@@ -225,7 +225,7 @@ fn debug_hit(state: Sh) -> String {
 
 #[tauri::command]
 fn open_menu(app: AppHandle) -> Result<(), String> {
-    show_menu(&app).map_err(|e| e.to_string())
+    show_menu(&app, false).map_err(|e| e.to_string())
 }
 
 /// Opens a chest ("cosmetic" or "emote") for CHEST_PRICE taps, or for free when another
@@ -429,18 +429,62 @@ fn notify(app: &AppHandle, shared: &Shared, msg: Option<String>) {
     let _ = app.emit("notice", msg);
 }
 
-fn show_menu(app: &AppHandle) -> tauri::Result<()> {
-    if let Some(w) = app.get_webview_window("menu") {
-        w.show()?;
-        return w.set_focus();
+const PANEL: (f64, f64) = (380.0, 600.0);
+/// When the panel last hid on blur. A tray click blurs it first, so that click must not reopen it.
+static PANEL_HID: Mutex<Option<Instant>> = Mutex::new(None);
+
+/// The menu is a panel hanging off the tray icon (above it when the tray is at the bottom,
+/// like on Windows). It hides when it loses focus. `toggle`: a tray click, which also closes it.
+fn show_menu(app: &AppHandle, toggle: bool) -> tauri::Result<()> {
+    let w = match app.get_webview_window("menu") {
+        Some(w) => w,
+        None => {
+            let w = WebviewWindowBuilder::new(app, "menu", WebviewUrl::App("index.html".into()))
+                .title("BongoCatBuddy")
+                .inner_size(PANEL.0, PANEL.1)
+                .decorations(false)
+                .transparent(true)
+                .resizable(false)
+                .always_on_top(true)
+                .skip_taskbar(true)
+                .visible(false)
+                .build()?;
+            let win = w.clone();
+            w.on_window_event(move |e| {
+                if let WindowEvent::Focused(false) = e {
+                    *PANEL_HID.lock().unwrap() = Some(Instant::now());
+                    let _ = win.hide();
+                }
+            });
+            w
+        }
+    };
+    if w.is_visible()? {
+        return if toggle { w.hide() } else { w.set_focus() };
     }
-    WebviewWindowBuilder::new(app, "menu", WebviewUrl::App("index.html".into()))
-        .title("BongoCatBuddy")
-        .inner_size(760.0, 560.0)
-        .min_inner_size(560.0, 420.0)
-        .center()
-        .build()?;
-    Ok(())
+    if toggle && PANEL_HID.lock().unwrap().is_some_and(|t| t.elapsed() < Duration::from_millis(300)) {
+        return Ok(());
+    }
+    match app.tray_by_id("tray").and_then(|t| t.rect().ok().flatten()) {
+        Some(r) => {
+            let sf = w.scale_factor()?;
+            let p = r.position.to_physical::<f64>(sf);
+            let s = r.size.to_physical::<f64>(sf);
+            let (pw, ph) = (PANEL.0 * sf, PANEL.1 * sf);
+            let (mut x, mut y) = (p.x + s.width / 2.0 - pw / 2.0, p.y + s.height + 4.0 * sf);
+            if let Some(m) = app.monitor_from_point(p.x, p.y)? {
+                let (mp, ms) = (m.position(), m.size());
+                if p.y > mp.y as f64 + ms.height as f64 / 2.0 {
+                    y = p.y - ph - 4.0 * sf;
+                }
+                x = x.clamp(mp.x as f64 + 8.0 * sf, (mp.x + ms.width as i32) as f64 - pw - 8.0 * sf);
+            }
+            w.set_position(tauri::PhysicalPosition::new(x, y))?;
+        }
+        None => w.center()?,
+    }
+    w.show()?;
+    w.set_focus()
 }
 
 const STARTING: &str = "Starting Steam…";
@@ -502,12 +546,19 @@ pub fn run() {
 
             let open = MenuItem::with_id(app, "menu", "Open menu", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            TrayIconBuilder::new()
+            TrayIconBuilder::with_id("tray")
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&Menu::with_items(app, &[&open, &quit])?)
+                // left click: the panel; right click: this menu
+                .show_menu_on_left_click(false)
+                .on_tray_icon_event(|tray, e| {
+                    if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = e {
+                        let _ = show_menu(tray.app_handle(), true);
+                    }
+                })
                 .on_menu_event(|app, e| match e.id.as_ref() {
                     "menu" => {
-                        let _ = show_menu(app);
+                        let _ = show_menu(app, false);
                     }
                     "quit" => app.exit(0),
                     _ => {}
