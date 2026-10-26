@@ -51,6 +51,25 @@ const union = (a: Rect, b: Rect): Rect => {
 };
 const grow = (r: Rect, by: number): Rect => ({ x: r.x - by, y: r.y - by, w: r.w + 2 * by, h: r.h + 2 * by });
 
+const SNAP = 8; // px: a dragged cat this close to a screen edge or another cat's line jumps onto it
+
+/**
+ * PowerPoint-style magnet for a `w x h` box at `p`, per axis: the box onto a screen edge or the
+ * screen center, or its cat (`fig`, inside the box) edge/center onto another cat's, nearest within SNAP.
+ */
+function snap(p: Pos, w: number, h: number, fig: Rect, cats: Rect[], S: Rect & { top: number }): Pos {
+  const lines = (a: number, len: number) => [a, a + len / 2, a + len];
+  const axis = (v: number, screen: number[], cat: number[], at: number, len: number) => {
+    const c = [...screen, ...cat.flatMap((l) => lines(at, len).map((o) => l - o))]
+      .reduce((a, b) => (Math.abs(b - v) < Math.abs(a - v) ? b : a), Infinity);
+    return Math.abs(c - v) <= SNAP ? c : v;
+  };
+  return [
+    axis(p[0], [0, (S.w - w) / 2, S.w - w], cats.flatMap((r) => lines(r.x, r.w)), fig.x, fig.w),
+    axis(p[1], [S.top, (S.top + S.h - h) / 2, S.h - h], cats.flatMap((r) => lines(r.y, r.h)), fig.y, fig.h),
+  ];
+}
+
 /**
  * `n` spots of `w x h` beside our cat's box, bottoms aligned with it: first to the right,
  * then to the left, then the same again one row higher.
@@ -161,6 +180,13 @@ export default function Overlay() {
     const base = otherBase(m.id, i);
     return { m, base, at: at(m.id, base) };
   });
+  // where the cat art sits inside each box, and every cat on screen (snap targets)
+  const myFig: Rect = { x: (L.w - L.boxW) / 2, y: TOP, w: L.boxW, h: L.boxH };
+  const remoteFig: Rect = { x: (R.w - R.figW) / 2, y: R.top, w: R.figW, h: R.figH };
+  const figs = [
+    { id: "me", ...myFig, x: me[0] + myFig.x, y: me[1] + myFig.y },
+    ...placed.map((o) => ({ id: o.m.id, ...remoteFig, x: o.at[0] + remoteFig.x, y: o.at[1] + remoteFig.y })),
+  ];
 
   // The window covers just the cats. Moving its left/top edge makes the cats jump for a frame
   // or two (the window moves before WebKit repaints), so drags avoid that: when everything
@@ -193,31 +219,38 @@ export default function Overlay() {
     setNativeFrom(win);
     getCurrentWindow().startDragging().catch(() => setNativeFrom(null));
   };
-  // Rust reports the release (the page never sees it during a native drag): save where we are.
-  const endNative = useRef(() => {});
-  endNative.current = () => {
+  // Rust reports the release (the page never sees it during a native drag): save where we are,
+  // snapped to the screen edges unless Alt is held. The other cats follow ours, so no cat lines.
+  const endNative = useRef((_alt: boolean) => {});
+  endNative.current = (alt) => {
     if (!nativeFrom) return;
-    update({ myPos: clamp(me, L.w, L.h) });
+    update({ myPos: clamp(alt ? me : snap(me, L.w, L.h, myFig, [], S), L.w, L.h) });
     setNativeFrom(null);
   };
   useEffect(() => {
-    const un = listen("mouse-up", () => endNative.current());
+    const un = listen<boolean>("mouse-up", (e) => endNative.current(e.payload));
     return () => void un.then((f) => f());
   }, []);
 
-  /** Drags a box with the pointer; under 4px of movement it stays a click (see `dragged`). */
-  const startDrag = (id: string, from: Pos, w: number, h: number) => (e: React.PointerEvent) => {
+  /**
+   * Drags a box with the pointer, snapping to the screen and the other cats unless Alt is held;
+   * under 4px of movement it stays a click (see `dragged`).
+   */
+  const startDrag = (id: string, from: Pos, w: number, h: number, fig: Rect) => (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     // screen coordinates: the window may move under the pointer while it grows
     const [sx, sy] = [e.screenX, e.screenY];
+    const cats = figs.filter((f) => f.id !== id);
     let last: { dx: number; dy: number } | null = null;
     dragged.current = false;
     const move = (ev: PointerEvent) => {
-      const d = { dx: ev.screenX - sx, dy: ev.screenY - sy };
-      if (!last && Math.hypot(d.dx, d.dy) < 4) return;
-      last = d;
+      const [dx, dy] = [ev.screenX - sx, ev.screenY - sy];
+      if (!last && Math.hypot(dx, dy) < 4) return;
+      const p: Pos = [from[0] + dx, from[1] + dy];
+      const [x, y] = ev.altKey ? p : snap(p, w, h, fig, cats, S);
+      last = { dx: x - from[0], dy: y - from[1] };
       dragged.current = true;
-      setDrag({ id, ...d });
+      setDrag({ id, ...last });
     };
     const up = () => {
       removeEventListener("pointermove", move);
@@ -386,7 +419,7 @@ export default function Overlay() {
           hovered={hover === m.id}
           x={x - ox}
           y={y - oy}
-          drag={free ? { onPointerDown: startDrag(m.id, base, R.w, R.h), wasDragged: () => dragged.current } : undefined}
+          drag={free ? { onPointerDown: startDrag(m.id, base, R.w, R.h, remoteFig), wasDragged: () => dragged.current } : undefined}
         />
       ))}
       <div data-hit="me" className="absolute" style={{ left: me[0] - ox, top: me[1] - oy, width: L.w, height: L.h }}>
@@ -456,7 +489,7 @@ export default function Overlay() {
           <div
             className={`pointer-events-auto absolute ${prefs.catBobbing ? "bob" : ""}`}
             style={{ left: boxLeft, top: TOP, width: L.boxW, height: L.boxH }}
-            onPointerDown={prefs.lockPosition ? undefined : wholeWindow ? startWindowDrag : startDrag("me", myBase, L.w, L.h)}
+            onPointerDown={prefs.lockPosition ? undefined : wholeWindow ? startWindowDrag : startDrag("me", myBase, L.w, L.h, myFig)}
             onContextMenu={(e) => {
               e.preventDefault();
               openMenu();

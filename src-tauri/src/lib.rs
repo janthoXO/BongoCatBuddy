@@ -12,7 +12,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use inventory::{Def, ItemDef, Stack};
-use rdev::{listen, Button, EventType};
+use rdev::{listen, Button, EventType, Key};
 use serde::Serialize;
 use steamworks::{AppId, Client};
 use tauri::menu::{Menu, MenuItem};
@@ -561,9 +561,10 @@ fn spawn_input(app: AppHandle, shared: Arc<Shared>, taps: Arc<AtomicU32>) {
             }
             // ponytail: rdev reports macOS points, which match logical px; check units if Windows/Linux builds matter
             EventType::MouseMove { x, y } => update_hit(&hook_app, &sh.hit, Some((x, y))),
-            // ends a native window drag, which the page itself never sees
+            // ends a native window drag, which the page itself never sees; payload: Alt held (no snapping)
             EventType::ButtonRelease(Button::Left) if sh.hit.lock().unwrap().hovered.is_some() => {
-                let _ = hook_app.emit_to("main", "mouse-up", ());
+                let alt = held.contains(&Key::Alt) || held.contains(&Key::AltGr);
+                let _ = hook_app.emit_to("main", "mouse-up", alt);
             }
             _ => {}
         });

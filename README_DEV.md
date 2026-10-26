@@ -54,6 +54,7 @@ Version lives in `package.json`; `tauri.conf.json` reads it.
 - Drag:
   - Own cat alone or row layout: whole window drags natively (`startDragging`). Position saved on rdev mouse-up.
   - Free layout: window stretched to screen during drag, then shrunk.
+  - Snap (PowerPoint-style, `snap` in `Overlay.tsx`): box onto screen edges/center, cat art onto other cats' edges/centers, within 8 px. Free drags snap live; native drags snap on release (screen only). Alt/Option held = no snap (`mouse-up` payload carries Alt for native drags).
 - Why: moving window left/top edge while webview repaints makes cats jump 1-2 frames on macOS (measured). Native drag avoids it.
 - Why small window: full-screen transparent window costs graphics memory.
 
