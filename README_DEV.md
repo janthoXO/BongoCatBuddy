@@ -101,6 +101,19 @@ Rest:
 - Rich presence `connect` = raw lobby id (friends join via Steam).
 - Members polled every 500 ms. Reason: steamworks 0.13 `LobbyChatUpdate` callback panics on combined flags.
 
+### Joining from Steam
+
+Buddy runs as app 3419430, so Steam treats it as the game. Tested on macOS (issue #7):
+
+| Case | What happens |
+|---|---|
+| Buddy running, game not | Invite / `steam://joinlobby/3419430/<lobby>/<user>` arrive in Buddy as `GameLobbyJoinRequested`. Friends list "Join game" uses our rich presence `connect` and arrives as `GameRichPresenceJoinRequested`. Both go to `join_later` in `lobby.rs`. Works. |
+| Buddy running, user starts game | Steam refuses: `LaunchApp ... WaitingPrevProcess`, then `AppError_16`. Game cannot start while Buddy runs. |
+| Nothing running | Steam starts the real game with `+connect_lobby <id>`. Buddy cannot catch this, no hook for `steam://` links. |
+| Game running, then Buddy | Not tested (game would not launch on the test Mac). Unknown who gets the callback. |
+
+steamworks 0.13 wraps both callbacks, so no raw `sys` needed.
+
 ## Dev driver
 
 Debug builds only (`devdriver.rs`). TCP on `127.0.0.1:7311`. Text before tab = window label (`main` or `menu`); after tab = body of async JS function run in that window. Return value (or error) written back.
