@@ -39,7 +39,7 @@ Download `BongoCatBuddy_<version>_x64-setup.exe` from Releases and run it. The i
 
 ### Requirements
 
-- Steam running and logged in.
+- Steam installed and logged in. If Steam is closed, the app starts it.
 - You own the Bongo Cat game. Install it too, so the app can read the cat art from it (see the FAQ).
 - macOS only: allow Input Monitoring / Accessibility for BongoCatBuddy so it can count keys system-wide.
 
@@ -83,7 +83,7 @@ About 118 MB in total in a dev build (app 40 MB, web content 62 MB, GPU 16 MB), 
 
 ## Development
 
-See [DEVELOPMENT.md](DEVELOPMENT.md) for setup, architecture and the multiplayer protocol. Built with Tauri 2 (Rust), React and shadcn/ui.
+See [README_DEV.md](README_DEV.md) for setup, architecture and the multiplayer protocol. Built with Tauri 2 (Rust), React and shadcn/ui.
 
 ## Disclaimer
 

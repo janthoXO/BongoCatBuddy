@@ -39,7 +39,7 @@ Version lives in `package.json`; `tauri.conf.json` reads it.
 
 ## Steam
 
-- `Client::init_app(3419430)`. Needs Steam running.
+- `connect_steam` on own thread: `Client::init_app(3419430)`. Fail = open `steam://`, retry every 2 s up to 2 min, notice "Starting Steam…". Windows show before. `Shared.steam` / `Shared.art` are `OnceLock`, empty until connect. Main loop register callbacks + load inventory on first tick with client.
 - `build.rs` copies Steam runtime lib (`libsteam_api.dylib` / `steam_api64.dll`; `libsteam_api.so` on Linux) from `steamworks-sys` crate sources (version from `Cargo.lock`) into `target/<profile>/`, next to the binary.
 - `tauri.conf.json` bundles it into macOS app: `Contents/MacOS/libsteam_api.dylib`.
 - `tauri.windows.conf.json` bundles `steam_api64.dll` next to the exe.
