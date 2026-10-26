@@ -30,6 +30,11 @@ rdev = { git = "https://github.com/kunkunsh/rdev", rev = "cb9a29e19668a52e4e67d8
 tauri-plugin-autostart = "2.7.0"
 ureq = "3"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# turn the windows into panels, so they show over fullscreen apps
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = ["NSWindow", "NSPanel", "NSResponder"] }
+
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

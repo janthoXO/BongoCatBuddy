@@ -429,6 +429,34 @@ fn notify(app: &AppHandle, shared: &Shared, msg: Option<String>) {
     let _ = app.emit("notice", msg);
 }
 
+/// macOS only shows another app's window over a fullscreen app if it is a non-activating
+/// NSPanel that is a fullscreen auxiliary. So swap the window's class to an NSPanel subclass
+/// (what tauri-nspanel does). `visibleOnAllWorkspaces` alone covers normal desktops only.
+#[cfg(target_os = "macos")]
+fn over_fullscreen(w: &tauri::WebviewWindow) {
+    use objc2::runtime::{AnyClass, AnyObject, Bool, ClassBuilder, Sel};
+    use objc2::{ClassType, sel};
+    use objc2_app_kit::{NSPanel, NSWindow, NSWindowCollectionBehavior as B, NSWindowStyleMask};
+    use std::sync::OnceLock;
+    static CLASS: OnceLock<&'static AnyClass> = OnceLock::new();
+    extern "C" fn yes(_: &AnyObject, _: Sel) -> Bool {
+        Bool::YES
+    }
+    let class = CLASS.get_or_init(|| {
+        let mut b = ClassBuilder::new(c"BongoCatBuddyPanel", NSPanel::class()).unwrap();
+        // borderless panels can't take focus by default; the menu needs it (hides on blur)
+        unsafe { b.add_method(sel!(canBecomeKeyWindow), yes as extern "C" fn(_, _) -> _) };
+        // tao's window class has one pointer-sized ivar; the swap needs equal instance sizes
+        b.add_ivar::<usize>(c"_tao_pad");
+        b.register()
+    });
+    let Ok(p) = w.ns_window() else { return };
+    let ns = unsafe { &*(p as *const NSWindow) };
+    unsafe { AnyObject::set_class(ns.as_ref(), class) };
+    ns.setStyleMask(ns.styleMask() | NSWindowStyleMask::NonactivatingPanel);
+    ns.setCollectionBehavior(ns.collectionBehavior() | B::CanJoinAllSpaces | B::FullScreenAuxiliary);
+}
+
 const PANEL: (f64, f64) = (380.0, 600.0);
 /// When the panel last hid on blur. A tray click blurs it first, so that click must not reopen it.
 static PANEL_HID: Mutex<Option<Instant>> = Mutex::new(None);
@@ -449,6 +477,8 @@ fn show_menu(app: &AppHandle, toggle: bool) -> tauri::Result<()> {
                 .skip_taskbar(true)
                 .visible(false)
                 .build()?;
+            #[cfg(target_os = "macos")]
+            over_fullscreen(&w);
             let win = w.clone();
             w.on_window_event(move |e| {
                 if let WindowEvent::Focused(false) = e {
@@ -535,6 +565,9 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .setup(move |app| {
+            // No Dock app: tray only, and its windows can float over other apps' fullscreen spaces.
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             let handle = app.handle().clone();
             let shared = Arc::new(Shared::default());
             if let Some(art) = art::ensure(&app.path().app_data_dir()?, None) {
@@ -567,6 +600,8 @@ pub fn run() {
 
             // The overlay covers the screen; it only takes the mouse over a cat (see update_hit).
             if let Some(w) = app.get_webview_window("main") {
+                #[cfg(target_os = "macos")]
+                over_fullscreen(&w);
                 w.set_ignore_cursor_events(true)?;
                 shared.hit.lock().unwrap().passthrough = true;
                 // Cache where the overlay is, so mouse moves need no window calls.
