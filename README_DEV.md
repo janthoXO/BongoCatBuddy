@@ -1,5 +1,7 @@
 # Development
 
+Direction: a clean, minimal alternative client for the game, not a second gamified one. It keeps the important features, stays wire-compatible, and stays light. New features go through that filter (see "Look").
+
 Rust own Steam. React draw cat. Tauri glue.
 
 ## Setup
@@ -47,7 +49,7 @@ Version lives in `package.json`; `tauri.conf.json` reads it.
 
 ## Look
 
-Minimal, system-like, not gamified. Tokens in `src/index.css`: system font, neutral grays, system blue. Light/dark follows the OS (`prefers-color-scheme`; the `dark:` variant is that media query, no class). Overlay chrome (score, name tags, bubbles, small buttons) uses the `pill` utility. Settings stay few: what can be a direct interaction is one (click cat = score bar, right-click = menu, emote wheel only when emotes are picked, chests only when ready).
+Minimal, system-like, not gamified. Tokens in `src/index.css`: system font, neutral grays, system blue. Light/dark follows the OS (`prefers-color-scheme`; the `dark:` variant is that media query, no class). Overlay chrome (score, name tags, bubbles, small buttons) uses the `pill` utility. Settings stay few: what can be a direct interaction is one (click cat = score bar, right-click = menu, emote bar only when emotes are picked, chests only when ready). Menu is a narrow tray panel, so UI must fit 380 px wide..
 
 ## Menu panel
 

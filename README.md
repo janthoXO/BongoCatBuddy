@@ -1,25 +1,31 @@
 # BongoCatBuddy
 
-**Cat tap. You tap. Cat happy.** A small desktop Bongo Cat companion for the Steam game.
+**Cat tap. You tap. Cat happy.** A clean, minimal client for the Bongo Cat Steam game.
 
 [![Release](https://img.shields.io/github/v/release/janthoXO/BongoCatBuddy)](https://github.com/janthoXO/BongoCatBuddy/releases)
 [![Build](https://github.com/janthoXO/BongoCatBuddy/actions/workflows/build.yml/badge.svg)](https://github.com/janthoXO/BongoCatBuddy/actions/workflows/build.yml)
 ![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Windows-blue)
 
-BongoCatBuddy is an unofficial Bongo Cat desktop overlay and companion app for the [Bongo Cat game on Steam](https://store.steampowered.com/app/3419430/): a transparent, always-on-top cat that taps along with your keyboard and mouse, counts the taps on your real Steam account, and lets you join the game's multiplayer lobbies from a lightweight Tauri app.
+BongoCatBuddy is an unofficial, minimal alternative client for the [Bongo Cat game on Steam](https://store.steampowered.com/app/3419430/). It runs instead of the game: a transparent, always-on-top cat taps along with your keyboard and mouse, and your taps, items and stats count on your real Steam account. You can also play in the game's multiplayer lobbies, together with people using the game.
 
-It is a calm, minimal client, not a second game: a clean system look that follows light and dark mode, a small menu that lives in the tray, and only the settings that matter.
+It keeps the game's main features but leaves out the busy, gamified UI:
+
+- a clean system look that follows light and dark mode
+- a small menu that lives in the tray
+- only the settings that matter
+
+It is a lightweight Tauri app (Rust and the system web view), not a game engine.
 
 ## Features
 
 - **Desktop pet overlay.** A transparent, always-on-top cat that taps with every global key press and mouse click, in any app. Click the cat to show or hide your score, right-click it for the menu. Cat size, flip, screen choice and whether mouse clicks count are configurable.
 - **Tray menu.** Click the tray (menu bar) icon for a small panel with your items, crafting, lobbies and settings. It closes when you click elsewhere.
 - **Real Steam progress.** The app talks to Steam directly through the Steamworks API, so taps, score and stats count for your Steam account in the real game.
-- **Inventory, chests and crafting.** Browse your items, open cosmetic and emote chests (1000 taps each), and craft new items from duplicates.
-- **Cosmetics and emotes.** Equip hats and skins, and pick favorite emotes for an on-screen emote wheel.
+- **Inventory, chests and crafting.** Browse your hats, skins and emotes with a live preview on your cat. When a cosmetic or emote chest is ready, it appears next to your score (1000 taps each). Craft new items from duplicates.
+- **Cosmetics and emotes.** Equip hats and skins, or let a random outfit change every 15, 30 or 60 minutes. Pick favorite emotes; they pop up in a small bar above your cat when you hover it.
 - **Multiplayer lobbies.** Join the game's Steam lobbies by code, join a random lobby, pick from the public list, or invite online Steam friends. A lobby holds up to 250 members. Other players' cats appear on your screen and yours on theirs.
 - **Social extras.** Pat other cats, send chat bubbles, see what others get from chests, and gift a chest to another player for 1000 taps.
-- **Light on memory.** The overlay window is only as big as the box around the cats, not the whole screen. In a dev build that is about 118 MB in total, against about 330 MB for a full-screen overlay.
+- **Light on memory.** The overlay window is only as big as the box around the cats, not the whole screen. In a dev build that is about 118 MB in total, against about 330 MB for a full-screen overlay. A side-by-side comparison with the game is planned in [#14](https://github.com/janthoXO/BongoCatBuddy/issues/14).
 
 ## Install
 
