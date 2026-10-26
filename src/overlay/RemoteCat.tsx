@@ -231,14 +231,9 @@ export function RemoteCat({
                 title={`Open ${member.name}'s chest for ${CHEST_PRICE} taps`}
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => void gift(e, kind)}
-                className="pill pointer-events-auto relative flex size-8 items-center justify-center"
+                className="pill pointer-events-auto relative flex size-6 items-center justify-center"
               >
-                <Gift className="size-4 text-primary" />
-                {kind === "emote" && (
-                  <span className="pill absolute -right-1 -top-1 flex size-3.5 items-center justify-center">
-                    <Smile className="size-2" />
-                  </span>
-                )}
+                {kind === "emote" ? <Smile className="size-3.5 text-primary" /> : <Gift className="size-3.5 text-primary" />}
                 {fx === kind && (
                   <span className="chest-float pointer-events-none absolute -top-3 text-xs font-semibold text-destructive">
                     -{CHEST_PRICE}
@@ -249,7 +244,7 @@ export function RemoteCat({
           )}
           <span
             data-solid
-            className={`pill max-w-28 truncate px-2 text-xs font-medium leading-5 ${
+            className={`pill max-w-28 truncate px-2 text-xs font-medium leading-6 ${
               hovered ? "" : "opacity-0"
             }`}
           >

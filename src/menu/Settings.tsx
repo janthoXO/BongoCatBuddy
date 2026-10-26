@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { availableMonitors, primaryMonitor } from "@tauri-apps/api/window";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -54,6 +55,8 @@ function Range({ label, range, value, format, onCommit }: { label: string; range
   );
 }
 
+const OUTFIT_EVERY: Record<string, string> = { "0": "Off", "15": "Every 15 min", "30": "Every 30 min", "60": "Every hour" };
+
 function Section({ title, footer, children }: { title: string; footer?: string; children: ReactNode }) {
   return (
     <section className="flex flex-col gap-1.5">
@@ -80,7 +83,7 @@ export function Settings() {
   return (
     <ScrollArea className="min-h-0 flex-1">
       <div className="flex flex-col gap-6 p-1 pr-3 pb-4">
-        <Section title="Cat" footer="Click your cat to show or hide the score. Right-click it to open this menu.">
+        <Section title="Cat" footer="Click your cat to show or hide the score. Right-click it to open this menu. Random outfit skips hidden items.">
           <Range label="Size" range={CAT_SCALE} value={prefs.catScale} format={(v) => `${Math.round(v * 100)}%`} onCommit={(v) => update({ catScale: v })} />
           {screens.length > 1 && (
             <Choice
@@ -94,15 +97,20 @@ export function Settings() {
           <Toggle label="Lock position" checked={prefs.lockPosition} onChange={set("lockPosition")} />
           <Toggle label="Count mouse clicks" checked={!prefs.ignoreMouse} onChange={(v) => update({ ignoreMouse: !v })} />
           <Toggle label="Wear new hats and skins" checked={prefs.autoEquipDrops} onChange={set("autoEquipDrops")} />
-        </Section>
-
-        <Section title="Random outfit" footer="Puts on another hat and skin you own now and then. Hidden items are skipped.">
-          <Choice
-            label="Change every"
-            value={String(prefs.randomOutfit)}
-            options={[["0", "Off"], ["15", "15 m"], ["30", "30 m"], ["60", "1 h"]]}
-            onChange={(v) => update({ randomOutfit: Number(v) })}
-          />
+          <Row label="Random outfit">
+            <Select items={OUTFIT_EVERY} value={String(prefs.randomOutfit)} onValueChange={(v) => update({ randomOutfit: Number(v) })}>
+              <SelectTrigger size="sm" aria-label="Random outfit" className="border-0 bg-muted dark:bg-muted">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(OUTFIT_EVERY).map(([v, label]) => (
+                  <SelectItem key={v} value={v}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Row>
           {prefs.randomOutfit > 0 && <Toggle label="Only favorites" checked={prefs.randomFavorites} onChange={set("randomFavorites")} />}
         </Section>
 

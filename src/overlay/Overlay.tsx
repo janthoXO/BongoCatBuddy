@@ -20,13 +20,11 @@ const HIT_MS = 100;
 const BOX_W = FIGURE_W;
 const BOX_H = FIGURE_H;
 // Fixed px (not scaled) around the cat box.
-const SIDE = 30; // each side margin; the chests sit in the score row, outside the cat
-const TOP = 0; // nothing reserved above the box: the popup and wheel overlap its empty hat area
-const WHEEL_R = 66;
-const WHEEL_CY = 100; // wheel arc center, below the box top (around the head)
-const WHEEL_W = 2 * WHEEL_R + 26;
-const CHEST_H = 52; // bubble + price chip
-const BOTTOM = CHEST_H + 6; // score row with the chests on both ends (+ notice)
+const SIDE = 30; // each side margin: room for the score row with its chests and buttons
+const TOP = 0; // nothing reserved above the box: the popup and emote bar overlap its empty hat area
+const ART_END = 14; // units: the cat art ends this far above the figure box; the score row tucks up into it
+const WHEEL_W = 8 * 24 + 7 * 2 + 4; // widest emote bar: 8 emotes
+const BOTTOM = 52; // score row + notice / chat input
 
 export const layout = (scale: number) => {
   const u = UNIT * scale;
@@ -123,7 +121,7 @@ function offsetIn(el: HTMLElement, box: HTMLElement): Rect {
 
 /**
  * What a cat box really shows, inside it: its sprites' opaque cells (each whole sprite until its
- * mask is in) and its bars (`data-solid`, buttons). Not the emote wheel, which only shows on
+ * mask is in) and its bars (`data-solid`, buttons). Not the emote bar, which only shows on
  * hover; the layout must not move then.
  */
 function occupied(box: HTMLElement): Rect | null {
@@ -139,7 +137,7 @@ function occupied(box: HTMLElement): Rect | null {
       }
     }
   }
-  for (const el of box.querySelectorAll<HTMLElement>("[data-solid], button:not(.wheel-pop), input")) {
+  for (const el of box.querySelectorAll<HTMLElement>("[data-solid], button:not(.wheel-pop *), input")) {
     const r = offsetIn(el, box);
     if (r.w && r.h) parts.push(r);
   }
@@ -491,7 +489,7 @@ export default function Overlay() {
   }, [head?.k]);
   const won = head && (catalog?.get(head.id) ?? null);
 
-  // no emotes picked in the inventory: no wheel
+  // no emotes picked in the inventory: no emote bar
   const wheelItems = prefs.emotes
     .map((id) => owned(id))
     .filter((i): i is Item => !!i)
@@ -509,8 +507,8 @@ export default function Overlay() {
 
   const boxLeft = (L.w - L.boxW) / 2;
   // Chests flank the score pill under the cat, so they never cover the art.
-  const chestTop = TOP + L.boxH + 2;
-  const chestX = 4;
+  const headY = TOP + 95 * L.u; // around the cat's head: emotes and hearts float up from here
+  const rowTop = TOP + L.boxH - ART_END * L.u + 2;
   const notice = flash ?? error;
   const openMenu = () => void invoke("open_menu").catch(() => {});
   const hovered = hover === "me" || drag?.id === "me";
@@ -561,13 +559,10 @@ export default function Overlay() {
           style={{ top: 0, width: L.w, height: TOP + L.boxH }}
         >
           {wheel && wheelItems.length > 0 && (
-            <div
-              className="pointer-events-none absolute z-10"
-              style={{ left: (L.w - WHEEL_W) / 2, top: TOP + WHEEL_CY - WHEEL_R - 13, width: WHEEL_W, height: WHEEL_R + 26 }}
-            >
-              {wheelItems.map((it, i) => {
-                const th = (Math.PI * (i + 1)) / (wheelItems.length + 1);
-                return (
+            // just above the visible art (hat or ears, see `occupied`), inside the window's padding
+            <div className="pointer-events-none absolute left-0 z-10 flex w-full justify-center" style={{ top: Math.max((occ.me?.y ?? TOP) - 32, 2 - PAD) }}>
+              <div className="wheel-pop pill flex gap-0.5 p-0.5">
+                {wheelItems.map((it) => (
                   <button
                     key={it.id}
                     type="button"
@@ -576,23 +571,15 @@ export default function Overlay() {
                       e.stopPropagation();
                       useEmote(it);
                     }}
-                    className="wheel-pop pill pointer-events-auto absolute flex size-[26px] items-center justify-center ring-2"
-                    style={{
-                      left: WHEEL_W / 2 - WHEEL_R * Math.cos(th) - 13,
-                      top: WHEEL_R + 13 - WHEEL_R * Math.sin(th) - 13,
-                      animationDelay: `${i * 40}ms`,
-                      ["--tw-ring-color" as string]: it.quality ? QUALITY_COLORS[it.quality] : undefined,
-                    }}
+                    className="pointer-events-auto relative flex size-6 items-center justify-center rounded-full hover:bg-accent"
                   >
                     <img src={iconUrl(it)} draggable={false} className="size-4 object-contain" />
                     {it.slot === "consumable" && (
-                      <span className="pill absolute -bottom-1 -right-1 px-1 text-[9px] leading-tight tabular-nums">
-                        {it.qty}
-                      </span>
+                      <span className="pill absolute -right-1 -bottom-1 px-1 text-[9px] leading-tight tabular-nums">{it.qty}</span>
                     )}
                   </button>
-                );
-              })}
+                ))}
+              </div>
             </div>
           )}
           <div
@@ -630,64 +617,67 @@ export default function Overlay() {
           <Heart
             key={k}
             className="emote-float pointer-events-none absolute z-30 size-6 fill-primary text-primary"
-            style={{ left: L.w / 2 - 12 + ((i % 3) - 1) * 18, top: TOP + WHEEL_CY - 40 }}
+            style={{ left: L.w / 2 - 12 + ((i % 3) - 1) * 18, top: headY - 40 }}
           />
         ))}
 
-        <Chest
-          kind="cosmetic"
-          onReady={(r) => setChestReady((c) => (c.cosmetic === r ? c : { ...c, cosmetic: r }))}
-          gift={gift.cosmetic}
-          tokens={catalog ? (catalog.get(CHEST_TOKEN)?.qty ?? 0) : null}
-          score={score?.current ?? null}
-          onWon={onWon}
-          style={{ left: chestX, top: chestTop }}
-        />
-        <Chest
-          kind="emote"
-          onReady={(r) => setChestReady((c) => (c.emote === r ? c : { ...c, emote: r }))}
-          gift={gift.emote}
-          tokens={catalog ? (catalog.get(EMOTE_CHEST_TOKEN)?.qty ?? 0) : null}
-          score={score?.current ?? null}
-          onWon={onWon}
-          style={{ right: chestX, top: chestTop }}
-        />
-
         {particles.map((p) => (
-          <EmoteParticle key={p.k} item={p.item} left={L.w / 2 - 32} top={TOP + WHEEL_CY - 32} />
+          <EmoteParticle key={p.k} item={p.item} left={L.w / 2 - 32} top={headY - 32} />
         ))}
 
         <div
           className="absolute left-0 flex flex-col items-center gap-1"
-          style={{ top: TOP + L.boxH + 2, width: L.w }}
+          style={{ top: rowTop, width: L.w }}
         >
-          <div className={`flex items-center gap-1 ${prefs.hideCounter ? "hidden" : ""}`}>
-            <span
-              data-solid
-              title={score ? `Lifetime: ${score.lifetime}` : undefined}
-              className="pill flex items-center gap-1 px-2 text-sm font-medium leading-6 tabular-nums"
-            >
-              <PawPrint className="size-3.5 text-muted-foreground" />
-              {score ? score.current.toLocaleString("en-US").replace(/,/g, " ") : "…"}
-            </span>
-            {lobby && (
+          {/* score and ready chests centered; the hover buttons hang off its right end so they
+              don't shift it (they stay mounted: the cat layout measures them, see `occupied`) */}
+          <div className="relative flex h-6 items-center gap-1">
+            {!prefs.hideCounter && (
+              <span
+                data-solid
+                title={score ? `Lifetime: ${score.lifetime}` : undefined}
+                className="pill flex items-center gap-1 px-2 text-sm font-medium leading-6 tabular-nums"
+              >
+                <PawPrint className="size-3.5 text-muted-foreground" />
+                {score ? score.current.toLocaleString("en-US").replace(/,/g, " ") : "…"}
+              </span>
+            )}
+            <Chest
+              kind="cosmetic"
+              onReady={(r) => setChestReady((c) => (c.cosmetic === r ? c : { ...c, cosmetic: r }))}
+              gift={gift.cosmetic}
+              tokens={catalog ? (catalog.get(CHEST_TOKEN)?.qty ?? 0) : null}
+              score={score?.current ?? null}
+              onWon={onWon}
+            />
+            <Chest
+              kind="emote"
+              onReady={(r) => setChestReady((c) => (c.emote === r ? c : { ...c, emote: r }))}
+              gift={gift.emote}
+              tokens={catalog ? (catalog.get(EMOTE_CHEST_TOKEN)?.qty ?? 0) : null}
+              score={score?.current ?? null}
+              onWon={onWon}
+            />
+            <div className="absolute top-0 left-full ml-1 flex gap-1">
+              {lobby && (
+                <button
+                  type="button"
+                  title="Say something"
+                  onClick={() => setTyping(true)}
+                  className={`pill flex size-6 items-center justify-center transition-opacity ${showOnHover}`}
+                >
+                  <MessageCircle className="size-3" />
+                </button>
+              )}
               <button
                 type="button"
-                title="Say something"
-                onClick={() => setTyping(true)}
+                title="Menu"
+                onClick={openMenu}
                 className={`pill flex size-6 items-center justify-center transition-opacity ${showOnHover}`}
               >
-                <MessageCircle className="size-3" />
+                <Menu className="size-3" />
               </button>
-            )}
-            <button
-              type="button"
-              title="Menu"
-              onClick={openMenu}
-              className={`pill flex size-6 items-center justify-center transition-opacity ${showOnHover}`}
-            >
-              <Menu className="size-3" />
-            </button>
+            </div>
           </div>
           {typing && (
             <input
