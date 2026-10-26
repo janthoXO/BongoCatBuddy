@@ -223,7 +223,7 @@ export default function Overlay() {
   }, [screen]);
 
   const S = screen ?? { x: 0, y: 0, w: innerWidth, h: innerHeight, top: 0 };
-  const R = remoteLayout(prefs.catScale * prefs.remoteCatRatio);
+  const R = remoteLayout(prefs.catScale);
   const clamp = ([x, y]: Pos, w: number, h: number): Pos => [
     Math.max(0, Math.min(x, S.w - w)),
     Math.max(S.top, Math.min(y, S.h - h)),
@@ -376,10 +376,10 @@ export default function Overlay() {
       hat: String(hatItem?.id ?? -1),
       skin: String(skin?.id ?? -1),
       chest_ready: String(chestReady.cosmetic),
-      emote_chest_ready: String(chestReady.emote && prefs.showEmoteChest),
+      emote_chest_ready: String(chestReady.emote),
     };
     invoke("lobby_set_me", { data }).catch(() => {});
-  }, [catalog, hatItem?.id, skin?.id, chestReady, prefs.showEmoteChest]);
+  }, [catalog, hatItem?.id, skin?.id, chestReady]);
   useEffect(() => {
     if (prefs.joinLastLobby && prefs.lastLobby)
       invoke("lobby_join_id", { id: prefs.lastLobby }).catch(() => update({ lastLobby: undefined }));
@@ -422,11 +422,29 @@ export default function Overlay() {
   };
 
   useEffect(() => {
-    void getCurrentWindow().setAlwaysOnTop(prefs.alwaysOnTop).catch(() => {});
-  }, [prefs.alwaysOnTop]);
-  useEffect(() => {
     invoke("set_ignore_mouse", { ignore: prefs.ignoreMouse }).catch(() => {});
   }, [prefs.ignoreMouse]);
+
+  // Random outfit, like the game's hat randomizer: every N minutes another owned, not hidden
+  // hat and skin (only favorites if set). Reads the latest prefs/catalog so they don't restart the timer.
+  const outfit = useRef({ prefs, catalog });
+  outfit.current = { prefs, catalog };
+  useEffect(() => {
+    if (!prefs.randomOutfit) return;
+    const t = setInterval(() => {
+      const { prefs: p, catalog: c } = outfit.current;
+      if (!c) return;
+      const equipped = { ...p.equipped };
+      for (const slot of ["hat", "skin"] as const) {
+        const pool = [...c.values()].filter(
+          (i) => i.slot === slot && i.qty > 0 && i.id !== p.equipped[slot] && !p.hidden.includes(i.id) && (!p.randomFavorites || p.favorites.includes(i.id)),
+        );
+        if (pool.length) equipped[slot] = pool[Math.floor(Math.random() * pool.length)].id;
+      }
+      update({ equipped });
+    }, prefs.randomOutfit * 60_000);
+    return () => clearInterval(t);
+  }, [prefs.randomOutfit]);
 
   useEffect(() => {
     invoke<Score | null>("get_score").then(setScore).catch(() => {});
@@ -473,12 +491,11 @@ export default function Overlay() {
   }, [head?.k]);
   const won = head && (catalog?.get(head.id) ?? null);
 
-  const wheelItems = prefs.showEmoteWheel
-    ? prefs.emotes
-        .map((id) => owned(id))
-        .filter((i): i is Item => !!i)
-        .slice(0, MAX_WHEEL_EMOTES)
-    : [];
+  // no emotes picked in the inventory: no wheel
+  const wheelItems = prefs.emotes
+    .map((id) => owned(id))
+    .filter((i): i is Item => !!i)
+    .slice(0, MAX_WHEEL_EMOTES);
   const useEmote = (item: Item) => {
     const k = ++seq.current;
     setParticles((p) => [...p, { k, item }]);
@@ -519,7 +536,7 @@ export default function Overlay() {
         {won !== undefined && head && (
           <div
             key={head.k}
-            className="popup pointer-events-none absolute left-1/2 top-1 z-20 flex items-center gap-2 overflow-hidden rounded-xl border-2 border-outline bg-card py-1 pl-3 pr-3 shadow-sticker"
+            className="popup pill pointer-events-none absolute left-1/2 top-1 z-20 flex items-center gap-2 overflow-hidden rounded-xl py-1 pl-3 pr-3"
             style={{ maxWidth: L.w - 8 }}
           >
             <span
@@ -528,9 +545,9 @@ export default function Overlay() {
             />
             {won ? <PopupIcon item={won} /> : null}
             <div className="min-w-0 leading-tight">
-              <p className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">New item!</p>
+              <p className="text-[10px] text-muted-foreground">New item</p>
               <p className="flex items-center gap-1 text-xs font-semibold text-foreground">
-                <span className="truncate font-heading">{won?.name ?? `#${head.id}`}</span>
+                <span className="truncate">{won?.name ?? `#${head.id}`}</span>
                 {won?.quality && (
                   <span className="size-2 shrink-0 rounded-full" style={{ background: QUALITY_COLORS[won.quality] }} />
                 )}
@@ -559,17 +576,17 @@ export default function Overlay() {
                       e.stopPropagation();
                       useEmote(it);
                     }}
-                    className="wheel-pop pointer-events-auto absolute flex size-[26px] items-center justify-center rounded-full border-2 bg-card shadow-sticker-sm"
+                    className="wheel-pop pill pointer-events-auto absolute flex size-[26px] items-center justify-center ring-2"
                     style={{
                       left: WHEEL_W / 2 - WHEEL_R * Math.cos(th) - 13,
                       top: WHEEL_R + 13 - WHEEL_R * Math.sin(th) - 13,
                       animationDelay: `${i * 40}ms`,
-                      borderColor: it.quality ? QUALITY_COLORS[it.quality] : "var(--outline)",
+                      ["--tw-ring-color" as string]: it.quality ? QUALITY_COLORS[it.quality] : undefined,
                     }}
                   >
                     <img src={iconUrl(it)} draggable={false} className="size-4 object-contain" />
                     {it.slot === "consumable" && (
-                      <span className="absolute -bottom-1 -right-1 rounded-full border border-outline bg-card px-1 text-[9px] leading-tight tabular-nums">
+                      <span className="pill absolute -bottom-1 -right-1 px-1 text-[9px] leading-tight tabular-nums">
                         {it.qty}
                       </span>
                     )}
@@ -579,7 +596,7 @@ export default function Overlay() {
             </div>
           )}
           <div
-            className={`pointer-events-auto absolute ${prefs.catBobbing ? "bob" : ""}`}
+            className="pointer-events-auto absolute"
             style={{ left: boxLeft, top: TOP, width: L.boxW, height: L.boxH }}
             onPointerDown={prefs.lockPosition ? undefined : wholeWindow ? startWindowDrag : startDrag("me", myBase, L.w, L.h, myFig)}
             onClick={!prefs.lockPosition && wholeWindow ? undefined : () => !dragged.current && toggleBar()}
@@ -603,7 +620,7 @@ export default function Overlay() {
         {speech && (
           <p
             key={speech.k}
-            className="pointer-events-none absolute left-1/2 top-1 z-20 line-clamp-2 -translate-x-1/2 break-words rounded-xl border-2 border-outline bg-card px-2 py-0.5 text-center text-xs text-foreground shadow-sticker-sm"
+            className="pill pointer-events-none absolute left-1/2 top-1 z-20 line-clamp-2 -translate-x-1/2 break-words rounded-xl px-2 py-0.5 text-center text-xs"
             style={{ maxWidth: L.w - 8 }}
           >
             {speech.text}
@@ -623,22 +640,18 @@ export default function Overlay() {
           gift={gift.cosmetic}
           tokens={catalog ? (catalog.get(CHEST_TOKEN)?.qty ?? 0) : null}
           score={score?.current ?? null}
-          prefs={prefs}
           onWon={onWon}
           style={{ left: chestX, top: chestTop }}
         />
-        {prefs.showEmoteChest && (
-          <Chest
-            kind="emote"
-            onReady={(r) => setChestReady((c) => (c.emote === r ? c : { ...c, emote: r }))}
-            gift={gift.emote}
-            tokens={catalog ? (catalog.get(EMOTE_CHEST_TOKEN)?.qty ?? 0) : null}
-            score={score?.current ?? null}
-            prefs={prefs}
-            onWon={onWon}
-            style={{ right: chestX, top: chestTop }}
-          />
-        )}
+        <Chest
+          kind="emote"
+          onReady={(r) => setChestReady((c) => (c.emote === r ? c : { ...c, emote: r }))}
+          gift={gift.emote}
+          tokens={catalog ? (catalog.get(EMOTE_CHEST_TOKEN)?.qty ?? 0) : null}
+          score={score?.current ?? null}
+          onWon={onWon}
+          style={{ right: chestX, top: chestTop }}
+        />
 
         {particles.map((p) => (
           <EmoteParticle key={p.k} item={p.item} left={L.w / 2 - 32} top={TOP + WHEEL_CY - 32} />
@@ -652,9 +665,9 @@ export default function Overlay() {
             <span
               data-solid
               title={score ? `Lifetime: ${score.lifetime}` : undefined}
-              className="flex items-center gap-1 rounded-full border-2 border-outline bg-card px-2 font-heading text-sm font-semibold leading-5 tabular-nums text-foreground shadow-sticker-sm"
+              className="pill flex items-center gap-1 px-2 text-sm font-medium leading-6 tabular-nums"
             >
-              <PawPrint className="size-3.5 text-primary" />
+              <PawPrint className="size-3.5 text-muted-foreground" />
               {score ? score.current.toLocaleString("en-US").replace(/,/g, " ") : "…"}
             </span>
             {lobby && (
@@ -662,7 +675,7 @@ export default function Overlay() {
                 type="button"
                 title="Say something"
                 onClick={() => setTyping(true)}
-                className={`flex size-6 items-center justify-center rounded-full border-2 border-outline bg-card text-foreground shadow-sticker-sm ${showOnHover}`}
+                className={`pill flex size-6 items-center justify-center transition-opacity ${showOnHover}`}
               >
                 <MessageCircle className="size-3" />
               </button>
@@ -671,7 +684,7 @@ export default function Overlay() {
               type="button"
               title="Menu"
               onClick={openMenu}
-              className={`flex size-6 items-center justify-center rounded-full border-2 border-outline bg-card text-foreground shadow-sticker-sm ${showOnHover}`}
+              className={`pill flex size-6 items-center justify-center transition-opacity ${showOnHover}`}
             >
               <Menu className="size-3" />
             </button>
@@ -686,13 +699,13 @@ export default function Overlay() {
                 if (e.key === "Escape") setTyping(false);
               }}
               onBlur={(e) => say(e.currentTarget.value)}
-              className="rounded-full border-2 border-outline bg-card px-2 text-xs leading-5 text-foreground shadow-sticker-sm outline-none"
+              className="pill px-2 text-xs leading-6 outline-none"
               style={{ width: L.w - 16 }}
             />
           )}
           {notice && (
             <p
-              className="max-w-full truncate rounded-full border-2 border-border bg-card px-2 text-center text-[10px] leading-4 text-muted-foreground"
+              className="pill max-w-full truncate px-2 text-center text-[10px] leading-4 text-muted-foreground"
               style={{ maxWidth: L.w - 8 }}
             >
               {notice}
@@ -709,7 +722,7 @@ function PopupIcon({ item }: { item: Item }) {
   return ok ? (
     <img src={iconUrl(item)} onError={() => setOk(false)} draggable={false} className="size-9 object-contain" />
   ) : (
-    <span className="flex size-9 items-center justify-center rounded bg-muted text-xs font-bold">
+    <span className="flex size-9 items-center justify-center rounded bg-muted text-xs font-medium">
       {item.name.split(" ").map((w) => w[0]).join("").slice(0, 2)}
     </span>
   );

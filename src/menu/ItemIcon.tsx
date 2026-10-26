@@ -27,7 +27,7 @@ export const tint = (q: Quality | null, pct = 14): CSSProperties | undefined =>
 export function QualityDot({ quality, className }: { quality: Quality | null; className?: string }) {
   return (
     <span
-      className={cn("inline-block size-2.5 shrink-0 rounded-full ring-1 ring-outline/40", className)}
+      className={cn("inline-block size-2.5 shrink-0 rounded-full ring-1 ring-black/10 dark:ring-white/15", className)}
       style={{ background: quality ? QUALITY_COLORS[quality] : "transparent" }}
     />
   );

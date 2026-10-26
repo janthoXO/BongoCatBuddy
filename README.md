@@ -8,9 +8,12 @@
 
 BongoCatBuddy is an unofficial Bongo Cat desktop overlay and companion app for the [Bongo Cat game on Steam](https://store.steampowered.com/app/3419430/): a transparent, always-on-top cat that taps along with your keyboard and mouse, counts the taps on your real Steam account, and lets you join the game's multiplayer lobbies from a lightweight Tauri app.
 
+It is a calm, minimal client, not a second game: a clean system look that follows light and dark mode, a small menu that lives in the tray, and only the settings that matter.
+
 ## Features
 
-- **Desktop pet overlay.** A transparent, always-on-top cat that taps with every global key press and mouse click, in any app. Cat size, flip, screen choice and whether mouse clicks count are configurable.
+- **Desktop pet overlay.** A transparent, always-on-top cat that taps with every global key press and mouse click, in any app. Click the cat to show or hide your score, right-click it for the menu. Cat size, flip, screen choice and whether mouse clicks count are configurable.
+- **Tray menu.** Click the tray (menu bar) icon for a small panel with your items, crafting, lobbies and settings. It closes when you click elsewhere.
 - **Real Steam progress.** The app talks to Steam directly through the Steamworks API, so taps, score and stats count for your Steam account in the real game.
 - **Inventory, chests and crafting.** Browse your items, open cosmetic and emote chests (1000 taps each), and craft new items from duplicates.
 - **Cosmetics and emotes.** Equip hats and skins, and pick favorite emotes for an on-screen emote wheel.
@@ -47,8 +50,8 @@ Download `BongoCatBuddy_<version>_x64-setup.exe` from Releases and run it. The i
 
 1. Start Steam.
 2. Launch BongoCatBuddy. The cat appears on your screen.
-3. Click the tray icon and choose **Open menu**. Right-clicking a cat opens it too.
-4. The menu has Inventory, Crafting, Lobby and Settings tabs.
+3. Click the tray (menu bar) icon to open the menu. Right-clicking your cat opens it too.
+4. The menu has Items, Craft, Lobby and Settings tabs.
 5. To play with others, open the **Lobby** tab and join by code, join random, or pick a public lobby.
 
 ## FAQ

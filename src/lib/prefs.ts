@@ -3,24 +3,19 @@ import { emit, listen } from "@tauri-apps/api/event";
 
 /** Player settings and local item state, shared by all windows. Defaults follow the game. */
 export type Prefs = {
-  /** cat size multiplier, within CAT_SCALE */
+  /** size multiplier for every cat (ours and other players'), within CAT_SCALE */
   catScale: number;
-  alwaysOnTop: boolean;
   lockPosition: boolean;
   flip: boolean;
   /** mouse clicks don't count as taps */
   ignoreMouse: boolean;
-  /** only show the score while hovering the cat */
+  /** score bar hidden; clicking our cat toggles it */
   hideCounter: boolean;
-  catBobbing: boolean;
-  /** pop the chest up when it's ready */
-  showChestPopup: boolean;
-  /** keep the chests (with their timers) visible all the time */
-  alwaysShowChest: boolean;
-  showEmoteChest: boolean;
-  animateChestPurchase: boolean;
   autoEquipDrops: boolean;
-  showEmoteWheel: boolean;
+  /** minutes between random outfits (hat + skin), 0 = off; like the game's hat randomizer */
+  randomOutfit: number;
+  /** random outfits only use favorites */
+  randomFavorites: boolean;
   /** crafting may auto-slot favorite items */
   craftAllowFavorites: boolean;
   /** crafting never auto-slots event items */
@@ -33,9 +28,6 @@ export type Prefs = {
   catLayout: "row" | "column" | "free";
   /** at most this many other cats are shown, within MAX_CATS */
   maxCats: number;
-  /** other players' cats' size relative to ours, within REMOTE_RATIO */
-  remoteCatRatio: number;
-  showPlayerNames: boolean;
   /** show what other players get from chests */
   multiplayerPopups: boolean;
   /** react to pats from others */
@@ -57,31 +49,23 @@ export type Prefs = {
 };
 
 export const CAT_SCALE = { min: 0.5, max: 4, step: 0.05 };
-export const REMOTE_RATIO = { min: 0.25, max: 2, step: 0.05 };
 export const MAX_WHEEL_EMOTES = 8;
 export const MAX_CATS = { min: 1, max: 50, step: 1 };
 
 const DEFAULTS: Prefs = {
   catScale: 1,
-  alwaysOnTop: true,
   lockPosition: false,
   flip: false,
   ignoreMouse: false,
   hideCounter: false,
-  catBobbing: false,
-  showChestPopup: true,
-  alwaysShowChest: false,
-  showEmoteChest: true,
-  animateChestPurchase: true,
   autoEquipDrops: false,
-  showEmoteWheel: true,
+  randomOutfit: 0,
+  randomFavorites: false,
   craftAllowFavorites: false,
   craftExcludeEvent: true,
   joinLastLobby: true,
   catLayout: "row",
   maxCats: 8,
-  remoteCatRatio: 0.75,
-  showPlayerNames: true,
   multiplayerPopups: true,
   receivePats: true,
   muteChats: false,
@@ -104,7 +88,6 @@ function load(): Prefs {
   try {
     const p = { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) ?? "{}") };
     p.catScale = clamp(p.catScale, CAT_SCALE, DEFAULTS.catScale);
-    p.remoteCatRatio = clamp(p.remoteCatRatio, REMOTE_RATIO, DEFAULTS.remoteCatRatio);
     p.maxCats = clamp(p.maxCats, MAX_CATS, DEFAULTS.maxCats);
     return p;
   } catch {
