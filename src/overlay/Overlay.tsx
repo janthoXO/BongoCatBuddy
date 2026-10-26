@@ -11,6 +11,7 @@ import { CatFigure, FIGURE_H, FIGURE_W } from "@/components/CatFigure";
 import { EmoteParticle } from "@/components/EmoteParticle";
 import { CH, lobbySend, MAX_SPEECH, onLobbyMsg, remoteLayout, useLobby } from "@/lib/lobby";
 import { RemoteCat } from "./RemoteCat";
+import { maskOf, onMask } from "@/lib/mask";
 
 const UNIT = 1.25; // px per unit at catScale 1
 const HIT_MS = 100;
@@ -51,19 +52,98 @@ const union = (a: Rect, b: Rect): Rect => {
 };
 const grow = (r: Rect, by: number): Rect => ({ x: r.x - by, y: r.y - by, w: r.w + 2 * by, h: r.h + 2 * by });
 
+const SNAP = 8; // px: a dragged cat this close to a screen edge or another cat's line jumps onto it
+
 /**
- * `n` spots of `w x h` beside our cat's box, bottoms aligned with it: first to the right,
- * then to the left, then the same again one row higher.
+ * PowerPoint-style magnet for a `w x h` box at `p`, per axis: the box onto a screen edge or the
+ * screen center, or its cat (`fig`, inside the box) edge/center onto another cat's, nearest within SNAP.
  */
-function rowSpots(n: number, me: Pos, meW: number, meH: number, w: number, h: number, viewW: number) {
+function snap(p: Pos, w: number, h: number, fig: Rect, cats: Rect[], S: Rect & { top: number }): Pos {
+  const lines = (a: number, len: number) => [a, a + len / 2, a + len];
+  const axis = (v: number, screen: number[], cat: number[], at: number, len: number) => {
+    const c = [...screen, ...cat.flatMap((l) => lines(at, len).map((o) => l - o))]
+      .reduce((a, b) => (Math.abs(b - v) < Math.abs(a - v) ? b : a), Infinity);
+    return Math.abs(c - v) <= SNAP ? c : v;
+  };
+  return [
+    axis(p[0], [0, (S.w - w) / 2, S.w - w], cats.flatMap((r) => lines(r.x, r.w)), fig.x, fig.w),
+    axis(p[1], [S.top, (S.top + S.h - h) / 2, S.h - h], cats.flatMap((r) => lines(r.y, r.h)), fig.y, fig.h),
+  ];
+}
+
+const GAP = 6; // px between what neighbouring cats show
+
+/**
+ * Spots (box positions) for other cats lined up from ours toward the side of the screen with more
+ * room, `GAP` apart by what each cat really shows: `occ[i]` (and `meOcc`) is that part inside its
+ * box (sprites and bars, see `occupied`). A row runs along x with feet level with ours (`meFeet`,
+ * and `feet` px down inside a box), a column along y with box centers aligned. A full line wraps
+ * to the next one, also toward more room, the widest/tallest cat apart.
+ */
+function lineSpots(column: boolean, me: Rect, meOcc: Rect, meFeet: number, occ: Rect[], w: number, feet: number, S: Rect & { top: number }) {
+  const mine = { x: me.x + meOcc.x, y: me.y + meOcc.y, w: meOcc.w, h: meOcc.h };
+  const dx = mine.x + mine.w / 2 < S.w / 2 ? 1 : -1;
+  const dy = mine.y + mine.h / 2 < (S.top + S.h) / 2 ? 1 : -1;
+  const d = column ? dy : dx;
+  const line = Math.max(...occ.map((o) => (column ? o.w : o.h))) + GAP;
+  const start = column ? (dy > 0 ? mine.y + mine.h : mine.y) : dx > 0 ? mine.x + mine.w : mine.x;
   const spots: Pos[] = [];
-  for (let y = me[1] + meH - h; spots.length < n; y -= h) {
-    const before = spots.length;
-    for (let x = me[0] + meW; x + w <= viewW && spots.length < n; x += w) spots.push([x, y]);
-    for (let x = me[0] - w; x >= 0 && spots.length < n; x -= w) spots.push([x, y]);
-    if (spots.length === before) spots.push([me[0] + meW, y]); // screen too narrow: overlap
+  let k = 0; // line
+  let n = 0; // cats in it
+  let edge = start; // where its last cat ends, along the line
+  for (const o of occ) {
+    for (;;) {
+      const [a, len] = column ? [o.y, o.h] : [o.x, o.w];
+      const at = d > 0 ? edge + GAP - a : edge - GAP - a - len;
+      const across = column ? me.x + (me.w - w) / 2 + dx * k * line : meFeet - feet + dy * k * line;
+      // off screen along the line: next line; a line always gets one cat so this ends (too small
+      // a screen: overlap). Across it the spots are clamped onto the screen later.
+      if (n > 0 && (column ? at + a < S.top || at + a + len > S.h : at + a < 0 || at + a + len > S.w)) {
+        [k, n, edge] = [k + 1, 0, start];
+        continue;
+      }
+      spots.push(column ? [across, at] : [at, across]);
+      edge = d > 0 ? at + a + len : at + a;
+      n++;
+      break;
+    }
   }
   return spots;
+}
+
+/** `el`'s layout box inside `box` (an ancestor), ignoring CSS transforms like bobbing or squish. */
+function offsetIn(el: HTMLElement, box: HTMLElement): Rect {
+  let [x, y] = [0, 0];
+  for (let e: HTMLElement | null = el; e && e !== box; e = e.offsetParent as HTMLElement | null) {
+    x += e.offsetLeft;
+    y += e.offsetTop;
+  }
+  return { x, y, w: el.offsetWidth, h: el.offsetHeight };
+}
+
+/**
+ * What a cat box really shows, inside it: its sprites' opaque cells (each whole sprite until its
+ * mask is in) and its bars (`data-solid`, buttons). Not the emote wheel, which only shows on
+ * hover; the layout must not move then.
+ */
+function occupied(box: HTMLElement): Rect | null {
+  const parts: Rect[] = [];
+  for (const fig of box.querySelectorAll<HTMLElement>("[data-figure]")) {
+    const f = offsetIn(fig, box);
+    const flip = fig.hasAttribute("data-flip");
+    for (const img of fig.querySelectorAll("img")) {
+      const r = offsetIn(img, fig);
+      for (const [x, y, w, h] of maskOf(img.src) ?? [[0, 0, 1, 1]]) {
+        const px = r.x + x * r.w;
+        parts.push({ x: f.x + (flip ? f.w - px - w * r.w : px), y: f.y + r.y + y * r.h, w: w * r.w, h: h * r.h });
+      }
+    }
+  }
+  for (const el of box.querySelectorAll<HTMLElement>("[data-solid], button:not(.wheel-pop), input")) {
+    const r = offsetIn(el, box);
+    if (r.w && r.h) parts.push(r);
+  }
+  return parts.length ? parts.reduce(union) : null;
 }
 
 type Particle = { k: number; item: Item };
@@ -88,6 +168,8 @@ export default function Overlay() {
   // Window rect when a native window drag started (moving the whole window, see below).
   const [nativeFrom, setNativeFrom] = useState<Rect | null>(null);
   const [drag, setDrag] = useState<{ id: string; dx: number; dy: number } | null>(null);
+  // what each cat box really shows, by id (see `occupied`)
+  const [occ, setOcc] = useState<Record<string, Rect>>({});
   const dragged = useRef(false);
   const [particles, setParticles] = useState<Particle[]>([]);
   const [queue, setQueue] = useState<Won[]>([]);
@@ -141,7 +223,7 @@ export default function Overlay() {
   }, [screen]);
 
   const S = screen ?? { x: 0, y: 0, w: innerWidth, h: innerHeight, top: 0 };
-  const R = remoteLayout(prefs.remoteCatScale);
+  const R = remoteLayout(prefs.catScale * prefs.remoteCatRatio);
   const clamp = ([x, y]: Pos, w: number, h: number): Pos => [
     Math.max(0, Math.min(x, S.w - w)),
     Math.max(S.top, Math.min(y, S.h - h)),
@@ -154,13 +236,25 @@ export default function Overlay() {
   const others = lobby
     ? lobby.members.filter((m) => m.id !== lobby.me && !prefs.hiddenPlayers.includes(m.id)).slice(0, prefs.maxCats)
     : [];
-  const spots = rowSpots(others.length, me, L.w, L.h, R.w, R.h, S.w);
+  // The cat art ends 14 units above the figure's bottom (see remoteLayout). What each box really
+  // shows is measured after rendering (`occ`); until then the whole box counts.
+  const spots = lineSpots(
+    prefs.catLayout === "column", { x: me[0], y: me[1], w: L.w, h: L.h }, occ.me ?? { x: 0, y: 0, w: L.w, h: L.h },
+    me[1] + TOP + L.boxH - 14 * L.u, others.map((m) => occ[m.id] ?? { x: 0, y: 0, w: R.w, h: R.h }), R.w, R.top + R.figH - 14 * R.u, S,
+  );
   const free = prefs.catLayout === "free";
   const otherBase = (id: string, i: number): Pos => clamp(free ? (prefs.catPos[id] ?? spots[i]) : spots[i], R.w, R.h);
   const placed = others.map((m, i) => {
     const base = otherBase(m.id, i);
     return { m, base, at: at(m.id, base) };
   });
+  // where the cat art sits inside each box, and every cat on screen (snap targets)
+  const myFig: Rect = { x: (L.w - L.boxW) / 2, y: TOP, w: L.boxW, h: L.boxH };
+  const remoteFig: Rect = { x: (R.w - R.figW) / 2, y: R.top, w: R.figW, h: R.figH };
+  const figs = [
+    { id: "me", ...myFig, x: me[0] + myFig.x, y: me[1] + myFig.y },
+    ...placed.map((o) => ({ id: o.m.id, ...remoteFig, x: o.at[0] + remoteFig.x, y: o.at[1] + remoteFig.y })),
+  ];
 
   // The window covers just the cats. Moving its left/top edge makes the cats jump for a frame
   // or two (the window moves before WebKit repaints), so drags avoid that: when everything
@@ -193,31 +287,42 @@ export default function Overlay() {
     setNativeFrom(win);
     getCurrentWindow().startDragging().catch(() => setNativeFrom(null));
   };
-  // Rust reports the release (the page never sees it during a native drag): save where we are.
-  const endNative = useRef(() => {});
-  endNative.current = () => {
+  // Clicking our cat (no drag) shows or hides the score bar.
+  const toggleBar = () => update({ hideCounter: !prefs.hideCounter });
+  // Rust reports the release (the page never sees it during a native drag, nor the click): save
+  // where we are, snapped to the screen edges unless Alt is held. The other cats follow ours, so
+  // no cat lines. Not moved: it was a click.
+  const endNative = useRef((_alt: boolean) => {});
+  endNative.current = (alt) => {
     if (!nativeFrom) return;
-    update({ myPos: clamp(me, L.w, L.h) });
+    if (shift[0] || shift[1]) update({ myPos: clamp(alt ? me : snap(me, L.w, L.h, myFig, [], S), L.w, L.h) });
+    else toggleBar();
     setNativeFrom(null);
   };
   useEffect(() => {
-    const un = listen("mouse-up", () => endNative.current());
+    const un = listen<boolean>("mouse-up", (e) => endNative.current(e.payload));
     return () => void un.then((f) => f());
   }, []);
 
-  /** Drags a box with the pointer; under 4px of movement it stays a click (see `dragged`). */
-  const startDrag = (id: string, from: Pos, w: number, h: number) => (e: React.PointerEvent) => {
+  /**
+   * Drags a box with the pointer, snapping to the screen and the other cats unless Alt is held;
+   * under 4px of movement it stays a click (see `dragged`).
+   */
+  const startDrag = (id: string, from: Pos, w: number, h: number, fig: Rect) => (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     // screen coordinates: the window may move under the pointer while it grows
     const [sx, sy] = [e.screenX, e.screenY];
+    const cats = figs.filter((f) => f.id !== id);
     let last: { dx: number; dy: number } | null = null;
     dragged.current = false;
     const move = (ev: PointerEvent) => {
-      const d = { dx: ev.screenX - sx, dy: ev.screenY - sy };
-      if (!last && Math.hypot(d.dx, d.dy) < 4) return;
-      last = d;
+      const [dx, dy] = [ev.screenX - sx, ev.screenY - sy];
+      if (!last && Math.hypot(dx, dy) < 4) return;
+      const p: Pos = [from[0] + dx, from[1] + dy];
+      const [x, y] = ev.altKey ? p : snap(p, w, h, fig, cats, S);
+      last = { dx: x - from[0], dy: y - from[1] };
       dragged.current = true;
-      setDrag({ id, ...d });
+      setDrag({ id, ...last });
     };
     const up = () => {
       removeEventListener("pointermove", move);
@@ -231,17 +336,37 @@ export default function Overlay() {
     addEventListener("pointerup", up);
   };
 
-  // Tell Rust where the boxes are after every render that moved one.
+  // Tell Rust where the boxes are after every render that moved one. Rust hovers the first rect
+  // under the cursor, so ours goes first: other cats' empty bubble room may overlap it (column).
+  // Clicks only land on what is solid: each sprite's opaque cells (its whole square until its
+  // mask is in) and the buttons; the rest of a box only hovers, clicks there go through.
   const lastHit = useRef("");
+  const [, setMasks] = useState(0);
+  useEffect(() => onMask(() => setMasks((n) => n + 1)), []);
   useLayoutEffect(() => {
-    const rects = [...document.querySelectorAll<HTMLElement>("[data-hit]")].map((el) => {
+    const els = [...document.querySelectorAll<HTMLElement>("[data-hit]")];
+    const rects = [...els.filter((el) => el.dataset.hit === "me"), ...els.filter((el) => el.dataset.hit !== "me")].map((el) => {
       const r = el.getBoundingClientRect();
       return [el.dataset.hit, r.x, r.y, r.width, r.height];
     });
-    const json = JSON.stringify([rects, !!drag]);
+    const solid = [...document.querySelectorAll<HTMLElement>("[data-hit] [data-figure] img, [data-hit] [data-solid], [data-hit] button, [data-hit] input")]
+      .flatMap((el) => {
+        const r = el.getBoundingClientRect();
+        const m = el instanceof HTMLImageElement ? maskOf(el.src) : null;
+        if (!m) return [[r.x, r.y, r.width, r.height]];
+        const flip = !!el.closest("[data-flip]");
+        return m.map(([x, y, w, h]) => [r.x + (flip ? 1 - x - w : x) * r.width, r.y + y * r.height, w * r.width, h * r.height]);
+      })
+      .map((r) => r.map(Math.round));
+    const shown = Object.fromEntries(els.flatMap((el) => {
+      const r = occupied(el);
+      return r ? [[el.dataset.hit!, r]] : [];
+    }));
+    if (JSON.stringify(shown) !== JSON.stringify(occ)) setOcc(shown);
+    const json = JSON.stringify([rects, solid, !!drag]);
     if (json === lastHit.current) return;
     lastHit.current = json;
-    invoke("set_hit_rects", { rects, hold: !!drag }).catch(() => {});
+    invoke("set_hit_rects", { rects, solid, hold: !!drag }).catch(() => {});
   });
 
   // Multiplayer: what others see of us, and what they send us.
@@ -386,7 +511,7 @@ export default function Overlay() {
           hovered={hover === m.id}
           x={x - ox}
           y={y - oy}
-          drag={free ? { onPointerDown: startDrag(m.id, base, R.w, R.h), wasDragged: () => dragged.current } : undefined}
+          drag={free ? { onPointerDown: startDrag(m.id, base, R.w, R.h, remoteFig), wasDragged: () => dragged.current } : undefined}
         />
       ))}
       <div data-hit="me" className="absolute" style={{ left: me[0] - ox, top: me[1] - oy, width: L.w, height: L.h }}>
@@ -420,7 +545,7 @@ export default function Overlay() {
         >
           {wheel && wheelItems.length > 0 && (
             <div
-              className="pointer-events-auto absolute"
+              className="pointer-events-none absolute z-10"
               style={{ left: (L.w - WHEEL_W) / 2, top: TOP + WHEEL_CY - WHEEL_R - 13, width: WHEEL_W, height: WHEEL_R + 26 }}
             >
               {wheelItems.map((it, i) => {
@@ -434,7 +559,7 @@ export default function Overlay() {
                       e.stopPropagation();
                       useEmote(it);
                     }}
-                    className="wheel-pop absolute flex size-[26px] items-center justify-center rounded-full border-2 bg-card shadow-sticker-sm"
+                    className="wheel-pop pointer-events-auto absolute flex size-[26px] items-center justify-center rounded-full border-2 bg-card shadow-sticker-sm"
                     style={{
                       left: WHEEL_W / 2 - WHEEL_R * Math.cos(th) - 13,
                       top: WHEEL_R + 13 - WHEEL_R * Math.sin(th) - 13,
@@ -456,7 +581,8 @@ export default function Overlay() {
           <div
             className={`pointer-events-auto absolute ${prefs.catBobbing ? "bob" : ""}`}
             style={{ left: boxLeft, top: TOP, width: L.boxW, height: L.boxH }}
-            onPointerDown={prefs.lockPosition ? undefined : wholeWindow ? startWindowDrag : startDrag("me", myBase, L.w, L.h)}
+            onPointerDown={prefs.lockPosition ? undefined : wholeWindow ? startWindowDrag : startDrag("me", myBase, L.w, L.h, myFig)}
+            onClick={!prefs.lockPosition && wholeWindow ? undefined : () => !dragged.current && toggleBar()}
             onContextMenu={(e) => {
               e.preventDefault();
               openMenu();
@@ -522,12 +648,11 @@ export default function Overlay() {
           className="absolute left-0 flex flex-col items-center gap-1"
           style={{ top: TOP + L.boxH + 2, width: L.w }}
         >
-          <div className="flex items-center gap-1">
+          <div className={`flex items-center gap-1 ${prefs.hideCounter ? "hidden" : ""}`}>
             <span
+              data-solid
               title={score ? `Lifetime: ${score.lifetime}` : undefined}
-              className={`flex items-center gap-1 rounded-full border-2 border-outline bg-card px-2 font-heading text-sm font-semibold leading-5 tabular-nums text-foreground shadow-sticker-sm ${
-                prefs.hideCounter ? showOnHover : ""
-              }`}
+              className="flex items-center gap-1 rounded-full border-2 border-outline bg-card px-2 font-heading text-sm font-semibold leading-5 tabular-nums text-foreground shadow-sticker-sm"
             >
               <PawPrint className="size-3.5 text-primary" />
               {score ? score.current.toLocaleString("en-US").replace(/,/g, " ") : "…"}

@@ -7,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { CAT_SCALE, MAX_CATS, usePrefs, type Prefs } from "@/lib/prefs";
+import { CAT_SCALE, MAX_CATS, REMOTE_RATIO, usePrefs, type Prefs } from "@/lib/prefs";
 
 type BoolKey = { [K in keyof Prefs]-?: Prefs[K] extends boolean ? K : never }[keyof Prefs];
 
@@ -20,7 +20,7 @@ const SECTIONS: { title: string; icon: ComponentType<{ className?: string }>; ro
       ["lockPosition", "Lock cat position", "Stop the cat from being dragged around."],
       ["flip", "Flip cat", "Mirror the cat horizontally."],
       ["ignoreMouse", "Mouse clicks don't count", "Only keyboard presses count as taps."],
-      ["hideCounter", "Only show score on hover", "Hide the tap counter until you point at the cat."],
+      ["hideCounter", "Hide score bar", "Click your cat to show or hide the score and buttons."],
       ["catBobbing", "Cat bobbing", "Let the cat bounce along while you type."],
     ],
   },
@@ -159,12 +159,16 @@ export function Settings() {
               <>
                 <Choice
                   label="Cat layout"
-                  desc={prefs.catLayout === "row" ? "Other cats line up next to yours and follow it." : "Drag every cat on its own; they remember their spot."}
+                  desc={{
+                    free: "Drag every cat on its own; they remember their spot.",
+                    row: "Other cats line up next to yours and follow it.",
+                    column: "Other cats stack above or below yours and follow it.",
+                  }[prefs.catLayout]}
                   value={prefs.catLayout}
-                  options={[["row", "Row"], ["free", "Free"]]}
+                  options={[["free", "Free"], ["row", "Row"], ["column", "Column"]]}
                   onChange={(v) => update({ catLayout: v as Prefs["catLayout"] })}
                 />
-                <Range label="Other cats' size" range={CAT_SCALE} value={prefs.remoteCatScale} format={pct} onCommit={(v) => update({ remoteCatScale: v })} />
+                <Range label="Other cats' size" range={REMOTE_RATIO} value={prefs.remoteCatRatio} format={(v) => `${pct(v)} of yours`} onCommit={(v) => update({ remoteCatRatio: v })} />
                 <Range label="Max cats shown" range={MAX_CATS} value={prefs.maxCats} format={String} onCommit={(v) => update({ maxCats: v })} />
               </>
             )}

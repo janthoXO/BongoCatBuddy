@@ -12,7 +12,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use inventory::{Def, ItemDef, Stack};
-use rdev::{listen, Button, EventType};
+use rdev::{listen, Button, EventType, Key};
 use serde::Serialize;
 use steamworks::{AppId, Client};
 use tauri::menu::{Menu, MenuItem};
@@ -73,6 +73,8 @@ struct Owned {
 struct Hit {
     /// (id, x, y, w, h) in window-relative CSS px
     rects: Vec<(String, f64, f64, f64, f64)>,
+    /// (x, y, w, h) parts that take clicks; hover still goes by `rects`
+    solid: Vec<(f64, f64, f64, f64)>,
     /// keep the mouse while something is dragged, even if the cursor outruns the rects
     hold: bool,
     hovered: Option<String>,
@@ -130,21 +132,47 @@ fn set_ignore_mouse(state: Sh, ignore: bool) {
     state.ignore_mouse.store(ignore, Ordering::Relaxed);
 }
 
-/// The overlay's mouse areas (window-relative CSS px) by id; `hold` while dragging.
+const CDN: &str = "https://pub-d6170922fa31462fa15463d240b18424.r2.dev/";
+
+/// Bytes of a sprite on the game's item CDN (no CORS there, so the overlay can't read its
+/// pixels itself). Only that CDN: the page can't use this to fetch anything else.
 #[tauri::command]
-fn set_hit_rects(app: AppHandle, state: Sh, rects: Vec<(String, f64, f64, f64, f64)>, hold: bool) {
+async fn fetch_art(url: String) -> Result<tauri::ipc::Response, String> {
+    if !url.starts_with(CDN) {
+        return Err("not a CDN url".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<u8>, String> {
+        let mut res = ureq::get(&url).call().map_err(|e| e.to_string())?;
+        res.body_mut().read_to_vec().map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map(tauri::ipc::Response::new)
+}
+
+/// The overlay's hover boxes by id and its solid (click-taking) rects, window-relative CSS px;
+/// `hold` while dragging.
+#[tauri::command]
+fn set_hit_rects(
+    app: AppHandle,
+    state: Sh,
+    rects: Vec<(String, f64, f64, f64, f64)>,
+    solid: Vec<(f64, f64, f64, f64)>,
+    hold: bool,
+) {
     {
         let mut hit = state.hit.lock().unwrap();
         hit.rects = rects;
+        hit.solid = solid;
         hit.hold = hold;
     }
     // a box may have moved under a resting cursor
     update_hit(&app, &state.hit, None);
 }
 
-/// Turns click-through off only while the cursor is over a hit rect, and tells the overlay
-/// what is hovered (CSS :hover can't see a click-through window). Runs on every global mouse
-/// move (`cursor`) and when the rects change. Window calls go through the main thread, where
+/// Turns click-through off only while the cursor is over a solid rect, and tells the overlay
+/// what hover box it is in (CSS :hover can't see a click-through window). Runs on every global
+/// mouse move (`cursor`) and when the rects change. Window calls go through the main thread, where
 /// sync commands like set_hit_rects run too, so `hit` is never locked across them.
 fn update_hit(app: &AppHandle, hit: &Mutex<Hit>, cursor: Option<(f64, f64)>) {
     let (passthrough, hovered) = {
@@ -158,7 +186,11 @@ fn update_hit(app: &AppHandle, hit: &Mutex<Hit>, cursor: Option<(f64, f64)>) {
             .iter()
             .find(|r| x >= r.1 && x < r.1 + r.3 && y >= r.2 && y < r.2 + r.4)
             .map(|r| r.0.clone());
-        let passthrough = now.is_none() && !hit.hold;
+        let passthrough = !hit.hold
+            && !hit
+                .solid
+                .iter()
+                .any(|r| x >= r.0 && x < r.0 + r.2 && y >= r.1 && y < r.1 + r.3);
         let changed = (passthrough != hit.passthrough, now != hit.hovered);
         hit.passthrough = passthrough;
         hit.hovered = now.clone();
@@ -180,8 +212,14 @@ fn update_hit(app: &AppHandle, hit: &Mutex<Hit>, cursor: Option<(f64, f64)>) {
 fn debug_hit(state: Sh) -> String {
     let hit = state.hit.lock().unwrap();
     format!(
-        "cursor {:?} origin {:?} rects {:?} hold {} hovered {:?} passthrough {}",
-        hit.cursor, hit.origin, hit.rects, hit.hold, hit.hovered, hit.passthrough
+        "cursor {:?} origin {:?} rects {:?} solid {} hold {} hovered {:?} passthrough {}",
+        hit.cursor,
+        hit.origin,
+        hit.rects,
+        hit.solid.len(),
+        hit.hold,
+        hit.hovered,
+        hit.passthrough
     )
 }
 
@@ -511,6 +549,7 @@ pub fn run() {
             get_inventory,
             set_ignore_mouse,
             set_hit_rects,
+            fetch_art,
             open_menu,
             open_chest,
             craft,
@@ -561,9 +600,10 @@ fn spawn_input(app: AppHandle, shared: Arc<Shared>, taps: Arc<AtomicU32>) {
             }
             // ponytail: rdev reports macOS points, which match logical px; check units if Windows/Linux builds matter
             EventType::MouseMove { x, y } => update_hit(&hook_app, &sh.hit, Some((x, y))),
-            // ends a native window drag, which the page itself never sees
+            // ends a native window drag, which the page itself never sees; payload: Alt held (no snapping)
             EventType::ButtonRelease(Button::Left) if sh.hit.lock().unwrap().hovered.is_some() => {
-                let _ = hook_app.emit_to("main", "mouse-up", ());
+                let alt = held.contains(&Key::Alt) || held.contains(&Key::AltGr);
+                let _ = hook_app.emit_to("main", "mouse-up", alt);
             }
             _ => {}
         });

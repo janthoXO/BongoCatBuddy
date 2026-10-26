@@ -48,7 +48,7 @@ export function RemoteCat({
   const live = useRef({ prefs, catalog });
   live.current = { prefs, catalog };
 
-  const L = remoteLayout(prefs.remoteCatScale);
+  const L = remoteLayout(prefs.catScale * prefs.remoteCatRatio);
 
   const burst = () => {
     const n = 1 + Math.floor(Math.random() * 3);
@@ -141,7 +141,8 @@ export function RemoteCat({
   return (
     <div
       data-hit={member.id}
-      className="absolute"
+      // boxes may overlap (column layout): only the cat and its buttons take the pointer
+      className="pointer-events-none absolute"
       style={{ left: x, top: y, width: L.w, height: L.h }}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -218,7 +219,7 @@ export function RemoteCat({
       ))}
 
       <div
-        className="pointer-events-none absolute left-0 flex flex-col items-center gap-0.5"
+        className="pointer-events-none absolute left-0 z-10 flex flex-col items-center gap-0.5"
         style={{ top: L.top + L.figH - 14 * L.u, width: L.w }}
       >
         <div className="flex items-center gap-1">
@@ -249,6 +250,7 @@ export function RemoteCat({
             ) : null,
           )}
           <span
+            data-solid
             className={`max-w-28 truncate rounded-full border-2 border-outline bg-card px-2 font-heading text-xs font-semibold leading-5 text-foreground shadow-sticker-sm ${
               prefs.showPlayerNames || hovered ? "" : "opacity-0"
             }`}

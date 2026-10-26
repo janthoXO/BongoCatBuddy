@@ -48,12 +48,14 @@ Version lives in `package.json`; `tauri.conf.json` reads it.
 ## Overlay and input
 
 - One transparent always-on-top window `main`. Size = bounding box of all cats + 24 px padding (`PAD` in `Overlay.tsx`).
-- Click-through by default (`set_ignore_cursor_events`). Rust gets global mouse moves from rdev. `update_hit` turns click-through off only when cursor is over a `[data-hit]` rect. Frontend reports rects with `set_hit_rects` (`hold` = true while dragging).
+- Click-through by default (`set_ignore_cursor_events`). Rust gets global mouse moves from rdev. Frontend reports with `set_hit_rects`: `[data-hit]` boxes (hover, ours first) and `solid` rects (`hold` = true while dragging). `update_hit` turns click-through off only when cursor is over a solid rect.
+- Solid = opaque pixels of each cat sprite + buttons/inputs. `src/lib/mask.ts`: sprite drawn to 32x32 canvas, alpha cells merged to rects, LRU cache of 64 masks, fetched on demand. Item CDN has no CORS, so Rust `fetch_art` (ureq, CDN urls only) gives the bytes. Mask not ready or unreadable = whole sprite square.
 - Events to frontend: `hover` (id of hovered rect or null; CSS `:hover` cannot see click-through window), `mouse-up` (left release while hovering; page never sees it during native drag).
 - No rdev (macOS permission missing): `spawn_input` polls cursor every 100 ms instead, shows a notice.
 - Drag:
-  - Own cat alone or row layout: whole window drags natively (`startDragging`). Position saved on rdev mouse-up.
+  - Own cat alone or row/column layout: whole window drags natively (`startDragging`). Position saved on rdev mouse-up.
   - Free layout: window stretched to screen during drag, then shrunk.
+  - Snap (PowerPoint-style, `snap` in `Overlay.tsx`): box onto screen edges/center, cat art onto other cats' edges/centers, within 8 px. Free drags snap live; native drags snap on release (screen only). Alt/Option held = no snap (`mouse-up` payload carries Alt for native drags).
 - Why: moving window left/top edge while webview repaints makes cats jump 1-2 frames on macOS (measured). Native drag avoids it.
 - Why small window: full-screen transparent window costs graphics memory.
 
