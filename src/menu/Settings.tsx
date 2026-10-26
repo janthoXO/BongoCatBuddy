@@ -159,9 +159,13 @@ export function Settings() {
               <>
                 <Choice
                   label="Cat layout"
-                  desc={prefs.catLayout === "row" ? "Other cats line up next to yours and follow it." : "Drag every cat on its own; they remember their spot."}
+                  desc={{
+                    free: "Drag every cat on its own; they remember their spot.",
+                    row: "Other cats line up next to yours and follow it.",
+                    column: "Other cats stack above or below yours and follow it.",
+                  }[prefs.catLayout]}
                   value={prefs.catLayout}
-                  options={[["row", "Row"], ["free", "Free"]]}
+                  options={[["free", "Free"], ["row", "Row"], ["column", "Column"]]}
                   onChange={(v) => update({ catLayout: v as Prefs["catLayout"] })}
                 />
                 <Range label="Other cats' size" range={CAT_SCALE} value={prefs.remoteCatScale} format={pct} onCommit={(v) => update({ remoteCatScale: v })} />

@@ -29,8 +29,8 @@ export type Prefs = {
   joinLastLobby: boolean;
   /** raw id of the lobby we were in when the app closed */
   lastLobby?: string;
-  /** "row": other players' cats line up beside ours and follow it; "free": each is dragged on its own */
-  catLayout: "row" | "free";
+  /** "row"/"column": other players' cats line up beside / above-below ours and follow it; "free": each is dragged on its own */
+  catLayout: "row" | "column" | "free";
   /** at most this many other cats are shown, within MAX_CATS */
   maxCats: number;
   /** size of other players' cats, within CAT_SCALE */

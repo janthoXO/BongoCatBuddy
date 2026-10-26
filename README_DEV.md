@@ -52,7 +52,7 @@ Version lives in `package.json`; `tauri.conf.json` reads it.
 - Events to frontend: `hover` (id of hovered rect or null; CSS `:hover` cannot see click-through window), `mouse-up` (left release while hovering; page never sees it during native drag).
 - No rdev (macOS permission missing): `spawn_input` polls cursor every 100 ms instead, shows a notice.
 - Drag:
-  - Own cat alone or row layout: whole window drags natively (`startDragging`). Position saved on rdev mouse-up.
+  - Own cat alone or row/column layout: whole window drags natively (`startDragging`). Position saved on rdev mouse-up.
   - Free layout: window stretched to screen during drag, then shrunk.
   - Snap (PowerPoint-style, `snap` in `Overlay.tsx`): box onto screen edges/center, cat art onto other cats' edges/centers, within 8 px. Free drags snap live; native drags snap on release (screen only). Alt/Option held = no snap (`mouse-up` payload carries Alt for native drags).
 - Why: moving window left/top edge while webview repaints makes cats jump 1-2 frames on macOS (measured). Native drag avoids it.

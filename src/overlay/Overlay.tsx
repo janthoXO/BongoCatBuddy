@@ -71,16 +71,25 @@ function snap(p: Pos, w: number, h: number, fig: Rect, cats: Rect[], S: Rect & {
 }
 
 /**
- * `n` spots of `w x h` beside our cat's box, bottoms aligned with it: first to the right,
- * then to the left, then the same again one row higher.
+ * `n` spots of `w x h` lined up from our cat's box toward the side of the screen with more room:
+ * a row runs along x (bottoms aligned with our cat), a column along y (centers aligned).
+ * A full line wraps to the next one, also toward more room.
  */
-function rowSpots(n: number, me: Pos, meW: number, meH: number, w: number, h: number, viewW: number) {
+function lineSpots(n: number, column: boolean, me: Rect, w: number, h: number, S: Rect & { top: number }) {
+  const dx = me.x + me.w / 2 < S.w / 2 ? 1 : -1;
+  const dy = me.y + me.h / 2 < (S.top + S.h) / 2 ? 1 : -1;
+  // i-th spot of `size` past our box (at `from`, `len` long) in direction d
+  const step = (from: number, len: number, size: number, d: number, i: number) => (d > 0 ? from + len + i * size : from - (i + 1) * size);
   const spots: Pos[] = [];
-  for (let y = me[1] + meH - h; spots.length < n; y -= h) {
-    const before = spots.length;
-    for (let x = me[0] + meW; x + w <= viewW && spots.length < n; x += w) spots.push([x, y]);
-    for (let x = me[0] - w; x >= 0 && spots.length < n; x -= w) spots.push([x, y]);
-    if (spots.length === before) spots.push([me[0] + meW, y]); // screen too narrow: overlap
+  for (let k = 0; spots.length < n; k++) {
+    for (let i = 0; spots.length < n; i++) {
+      const p: Pos = column
+        ? [me.x + (me.w - w) / 2 + dx * k * w, step(me.y, me.h, h, dy, i)]
+        : [step(me.x, me.w, w, dx, i), me.y + me.h - h + dy * k * h];
+      // off screen: next line; a line always gets one spot so this ends (too small a screen: overlap)
+      if (i > 0 && (p[0] < 0 || p[0] + w > S.w || p[1] < S.top || p[1] + h > S.h)) break;
+      spots.push(p);
+    }
   }
   return spots;
 }
@@ -173,7 +182,7 @@ export default function Overlay() {
   const others = lobby
     ? lobby.members.filter((m) => m.id !== lobby.me && !prefs.hiddenPlayers.includes(m.id)).slice(0, prefs.maxCats)
     : [];
-  const spots = rowSpots(others.length, me, L.w, L.h, R.w, R.h, S.w);
+  const spots = lineSpots(others.length, prefs.catLayout === "column", { x: me[0], y: me[1], w: L.w, h: L.h }, R.w, R.h, S);
   const free = prefs.catLayout === "free";
   const otherBase = (id: string, i: number): Pos => clamp(free ? (prefs.catPos[id] ?? spots[i]) : spots[i], R.w, R.h);
   const placed = others.map((m, i) => {
