@@ -253,7 +253,7 @@ fn join_later(app: &AppHandle, id: LobbyId) {
     let app = app.clone();
     thread::spawn(move || {
         let sh = app.state::<Arc<Shared>>();
-        if let Some(c) = &sh.steam
+        if let Some(c) = sh.steam.get()
             && let Err(e) = join(c, &sh.lobby, id)
         {
             let _ = app.emit("lobby-error", e);
@@ -339,7 +339,7 @@ async fn run<T: Send + 'static>(
 ) -> Result<T, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let sh = app.state::<Arc<Shared>>();
-        let c = sh.steam.as_ref().ok_or("Steam not available")?;
+        let c = sh.steam.get().ok_or("Steam not available")?;
         f(c, &sh.lobby)
     })
     .await

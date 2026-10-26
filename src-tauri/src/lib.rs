@@ -7,7 +7,7 @@ mod lobby;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -84,8 +84,9 @@ struct Hit {
 
 #[derive(Default)]
 struct Shared {
-    steam: Option<Client>,
-    art: Option<PathBuf>,
+    /// Set once Steam is up, which can be a while after start (see connect_steam).
+    steam: OnceLock<Client>,
+    art: OnceLock<PathBuf>,
     stats: Mutex<Option<Stats>>,
     notice: Mutex<Option<String>>,
     catalog: Mutex<Option<Vec<ItemDef>>>,
@@ -101,7 +102,7 @@ type Sh<'a> = State<'a, Arc<Shared>>;
 
 #[tauri::command]
 fn get_art(state: Sh) -> Option<String> {
-    state.art.as_ref().map(|p| p.to_string_lossy().into_owned())
+    state.art.get().map(|p| p.to_string_lossy().into_owned())
 }
 
 #[tauri::command]
@@ -237,7 +238,7 @@ async fn gift_chest(app: AppHandle, target: String, kind: String) -> Result<(), 
         if !affordable(sh) {
             return Err("Not enough taps".into());
         }
-        if !lobby::send_current(sh.steam.as_ref().unwrap(), &sh.lobby, 4, &format!("{target}:{kind}")) {
+        if !lobby::send_current(sh.steam.get().unwrap(), &sh.lobby, 4, &format!("{target}:{kind}")) {
             return Err("Not in a lobby".into());
         }
         spend(app, sh, CHEST_PRICE);
@@ -326,7 +327,7 @@ async fn blocking<T: Send + 'static>(
 ) -> Result<T, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let sh = app.state::<Arc<Shared>>().inner().clone();
-        if sh.steam.is_none() {
+        if sh.steam.get().is_none() {
             return Err("Steam not available".into());
         }
         let _guard = sh.busy.lock().unwrap();
@@ -363,7 +364,7 @@ fn spend(app: &AppHandle, sh: &Shared, amount: i32) {
     let mut stats = sh.stats.lock().unwrap();
     let Some(s) = stats.as_mut() else { return };
     s.minus = s.minus.saturating_add(amount).min(MAX_STAT);
-    if let Some(c) = &sh.steam {
+    if let Some(c) = sh.steam.get() {
         let us = c.user_stats();
         let _ = us.set_stat_i32("BongoMinus", s.minus);
         let _ = us.store_stats();
@@ -372,7 +373,7 @@ fn spend(app: &AppHandle, sh: &Shared, amount: i32) {
 }
 
 fn bump_stat(sh: &Shared, name: &str) {
-    if let Some(c) = &sh.steam {
+    if let Some(c) = sh.steam.get() {
         let us = c.user_stats();
         if let Ok(v) = us.get_stat_i32(name) {
             let _ = us.set_stat_i32(name, v.saturating_add(1));
@@ -381,9 +382,12 @@ fn bump_stat(sh: &Shared, name: &str) {
     }
 }
 
-fn notify(app: &AppHandle, shared: &Shared, msg: String) {
-    eprintln!("{msg}");
-    *shared.notice.lock().unwrap() = Some(msg.clone());
+/// Shows (or with None clears) the overlay's notice.
+fn notify(app: &AppHandle, shared: &Shared, msg: Option<String>) {
+    if let Some(m) = &msg {
+        eprintln!("{m}");
+    }
+    *shared.notice.lock().unwrap() = msg.clone();
     let _ = app.emit("notice", msg);
 }
 
@@ -401,32 +405,62 @@ fn show_menu(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+const STARTING: &str = "Starting Steam…";
+
+/// Connects to Steam, starting it through the steam:// handler if it isn't running.
+/// Runs on its own thread so the windows show while Steam boots.
+fn connect_steam(app: &AppHandle, sh: &Shared) {
+    let mut res = Client::init_app(APP_ID);
+    if res.is_err() {
+        #[cfg(target_os = "macos")]
+        let launched = std::process::Command::new("open").arg("steam://").spawn();
+        #[cfg(windows)]
+        let launched = std::process::Command::new("explorer").arg("steam://").spawn();
+        #[cfg(not(any(target_os = "macos", windows)))]
+        let launched = std::process::Command::new("xdg-open").arg("steam://").spawn();
+        if launched.is_ok() {
+            notify(app, sh, Some(STARTING.into()));
+            for _ in 0..60 {
+                thread::sleep(Duration::from_secs(2));
+                res = Client::init_app(APP_ID);
+                if res.is_ok() {
+                    break;
+                }
+            }
+        }
+    }
+    let client = match res {
+        Ok(c) => c,
+        Err(e) => return notify(app, sh, Some(format!("Steam not available: {e:?}"))),
+    };
+    // Clear "Starting Steam…", but not a notice that came in meanwhile.
+    if sh.notice.lock().unwrap().as_deref() == Some(STARTING) {
+        notify(app, sh, None);
+    }
+    let install = client.apps().app_install_dir(AppId(APP_ID));
+    // ponytail: a window that already asked for art keeps the placeholder until restart
+    if sh.art.get().is_none()
+        && let Ok(data) = app.path().app_data_dir()
+        && let Some(art) = art::ensure(&data, Some(install.as_str()).filter(|d| !d.is_empty()))
+    {
+        let _ = sh.art.set(art);
+    }
+    let _ = sh.steam.set(client);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let steam = Client::init_app(APP_ID);
-    let exit_client = steam.as_ref().ok().cloned();
-
     tauri::Builder::default()
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .setup(move |app| {
             let handle = app.handle().clone();
-            let (client, steam_error) = match steam {
-                Ok(c) => (Some(c), None),
-                Err(e) => (None, Some(format!("Steam not available: {e:?}"))),
-            };
-            let install_dir = client
-                .as_ref()
-                .map(|c| c.apps().app_install_dir(AppId(APP_ID)))
-                .filter(|d| !d.is_empty());
-            let shared = Arc::new(Shared {
-                art: art::ensure(&app.path().app_data_dir()?, install_dir.as_deref()),
-                steam: client,
-                ..Default::default()
-            });
-            app.manage(shared.clone());
-            if let Some(e) = steam_error {
-                notify(&handle, &shared, e);
+            let shared = Arc::new(Shared::default());
+            if let Some(art) = art::ensure(&app.path().app_data_dir()?, None) {
+                let _ = shared.art.set(art);
             }
+            app.manage(shared.clone());
+            let (h, sh) = (handle.clone(), shared.clone());
+            thread::spawn(move || connect_steam(&h, &sh));
 
             let open = MenuItem::with_id(app, "menu", "Open menu", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
@@ -501,8 +535,8 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
-        .run(move |_, event| {
-            if let (RunEvent::Exit, Some(c)) = (event, &exit_client) {
+        .run(|app, event| {
+            if let (RunEvent::Exit, Some(c)) = (event, app.state::<Arc<Shared>>().steam.get()) {
                 let _ = c.user_stats().store_stats();
             }
         });
@@ -537,7 +571,7 @@ fn spawn_input(app: AppHandle, shared: Arc<Shared>, taps: Arc<AtomicU32>) {
             notify(
                 &app,
                 &shared,
-                format!("Can't read keys ({e:?}). Allow Input Monitoring/Accessibility, then restart."),
+                Some(format!("Can't read keys ({e:?}). Allow Input Monitoring/Accessibility, then restart.")),
             );
             // No global mouse events either: poll the cursor, slower, so the cats stay clickable.
             loop {
@@ -561,11 +595,7 @@ fn main_loop(app: AppHandle, sh: Arc<Shared>, taps: Arc<AtomicU32>) {
     let due = |t: Option<Instant>, every: Duration| t.is_none_or(|t| t.elapsed() >= every);
 
     let mut last_poll = Instant::now();
-    let _callbacks = sh.steam.as_ref().map(|c| lobby::register(c, &app));
-    if sh.steam.is_some() {
-        let (app, sh) = (app.clone(), sh.clone());
-        thread::spawn(move || refresh(&app, &sh));
-    }
+    let mut callbacks = None;
 
     loop {
         thread::sleep(TICK);
@@ -574,7 +604,12 @@ fn main_loop(app: AppHandle, sh: Arc<Shared>, taps: Arc<AtomicU32>) {
             let _ = app.emit("tap", n);
             pending = pending.saturating_add(n);
         }
-        let Some(client) = &sh.steam else { continue };
+        let Some(client) = sh.steam.get() else { continue };
+        if callbacks.is_none() {
+            callbacks = Some(lobby::register(client, &app));
+            let (app, sh) = (app.clone(), sh.clone());
+            thread::spawn(move || refresh(&app, &sh));
+        }
         client.run_callbacks();
         lobby::tick(client, &app, &sh.lobby, n as u32, &mut last_poll);
         let us = client.user_stats();
