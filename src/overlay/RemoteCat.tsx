@@ -250,6 +250,7 @@ export function RemoteCat({
             ) : null,
           )}
           <span
+            data-solid
             className={`max-w-28 truncate rounded-full border-2 border-outline bg-card px-2 font-heading text-xs font-semibold leading-5 text-foreground shadow-sticker-sm ${
               prefs.showPlayerNames || hovered ? "" : "opacity-0"
             }`}

@@ -71,34 +71,79 @@ function snap(p: Pos, w: number, h: number, fig: Rect, cats: Rect[], S: Rect & {
   ];
 }
 
-const GAP = 6; // px between lines of other cats
-const HAT_ROOM = 35; // units from the figure's top to the body art (CatFigure: OY - BODY.y - 64)
+const GAP = 6; // px between what neighbouring cats show
 
 /**
- * `n` spots of `w x h` lined up from our cat's box toward the side of the screen with more room:
- * a row runs along x with feet level with ours (`meFeet`, and `feet` px down inside a spot), a
- * column along y, centers aligned. A full line wraps to the next one, also toward more room.
- * Lines sit `GAP` apart, letting the empty `top` of each spot (bubble and hat room) overlap the cat before it.
+ * Spots (box positions) for other cats lined up from ours toward the side of the screen with more
+ * room, `GAP` apart by what each cat really shows: `occ[i]` (and `meOcc`) is that part inside its
+ * box (sprites and bars, see `occupied`). A row runs along x with feet level with ours (`meFeet`,
+ * and `feet` px down inside a box), a column along y with box centers aligned. A full line wraps
+ * to the next one, also toward more room, the widest/tallest cat apart.
  */
-function lineSpots(n: number, column: boolean, me: Rect, meFeet: number, w: number, h: number, top: number, feet: number, S: Rect & { top: number }) {
-  const dx = me.x + me.w / 2 < S.w / 2 ? 1 : -1;
-  const dy = me.y + me.h / 2 < (S.top + S.h) / 2 ? 1 : -1;
-  const line = h - top + GAP;
-  // i-th spot of `size` past our box (at `from`, `len` long) in direction d
-  const step = (from: number, len: number, size: number, d: number, i: number) => (d > 0 ? from + len + i * size : from - (i + 1) * size);
+function lineSpots(column: boolean, me: Rect, meOcc: Rect, meFeet: number, occ: Rect[], w: number, feet: number, S: Rect & { top: number }) {
+  const mine = { x: me.x + meOcc.x, y: me.y + meOcc.y, w: meOcc.w, h: meOcc.h };
+  const dx = mine.x + mine.w / 2 < S.w / 2 ? 1 : -1;
+  const dy = mine.y + mine.h / 2 < (S.top + S.h) / 2 ? 1 : -1;
+  const d = column ? dy : dx;
+  const line = Math.max(...occ.map((o) => (column ? o.w : o.h))) + GAP;
+  const start = column ? (dy > 0 ? mine.y + mine.h : mine.y) : dx > 0 ? mine.x + mine.w : mine.x;
   const spots: Pos[] = [];
-  for (let k = 0; spots.length < n; k++) {
-    for (let i = 0; spots.length < n; i++) {
-      const p: Pos = column
-        ? [me.x + (me.w - w) / 2 + dx * k * w, step(me.y, me.h + GAP, line, dy, i) - top]
-        : [step(me.x, me.w, w, dx, i), meFeet - feet + dy * k * line];
-      // off screen along the line: next line; a line always gets one spot so this ends (too small a
-      // screen: overlap). Across it the spots are clamped onto the screen later.
-      if (i > 0 && (column ? p[1] < S.top || p[1] + h > S.h : p[0] < 0 || p[0] + w > S.w)) break;
-      spots.push(p);
+  let k = 0; // line
+  let n = 0; // cats in it
+  let edge = start; // where its last cat ends, along the line
+  for (const o of occ) {
+    for (;;) {
+      const [a, len] = column ? [o.y, o.h] : [o.x, o.w];
+      const at = d > 0 ? edge + GAP - a : edge - GAP - a - len;
+      const across = column ? me.x + (me.w - w) / 2 + dx * k * line : meFeet - feet + dy * k * line;
+      // off screen along the line: next line; a line always gets one cat so this ends (too small
+      // a screen: overlap). Across it the spots are clamped onto the screen later.
+      if (n > 0 && (column ? at + a < S.top || at + a + len > S.h : at + a < 0 || at + a + len > S.w)) {
+        [k, n, edge] = [k + 1, 0, start];
+        continue;
+      }
+      spots.push(column ? [across, at] : [at, across]);
+      edge = d > 0 ? at + a + len : at + a;
+      n++;
+      break;
     }
   }
   return spots;
+}
+
+/** `el`'s layout box inside `box` (an ancestor), ignoring CSS transforms like bobbing or squish. */
+function offsetIn(el: HTMLElement, box: HTMLElement): Rect {
+  let [x, y] = [0, 0];
+  for (let e: HTMLElement | null = el; e && e !== box; e = e.offsetParent as HTMLElement | null) {
+    x += e.offsetLeft;
+    y += e.offsetTop;
+  }
+  return { x, y, w: el.offsetWidth, h: el.offsetHeight };
+}
+
+/**
+ * What a cat box really shows, inside it: its sprites' opaque cells (each whole sprite until its
+ * mask is in) and its bars (`data-solid`, buttons). Not the emote wheel, which only shows on
+ * hover; the layout must not move then.
+ */
+function occupied(box: HTMLElement): Rect | null {
+  const parts: Rect[] = [];
+  for (const fig of box.querySelectorAll<HTMLElement>("[data-figure]")) {
+    const f = offsetIn(fig, box);
+    const flip = fig.hasAttribute("data-flip");
+    for (const img of fig.querySelectorAll("img")) {
+      const r = offsetIn(img, fig);
+      for (const [x, y, w, h] of maskOf(img.src) ?? [[0, 0, 1, 1]]) {
+        const px = r.x + x * r.w;
+        parts.push({ x: f.x + (flip ? f.w - px - w * r.w : px), y: f.y + r.y + y * r.h, w: w * r.w, h: h * r.h });
+      }
+    }
+  }
+  for (const el of box.querySelectorAll<HTMLElement>("[data-solid], button:not(.wheel-pop), input")) {
+    const r = offsetIn(el, box);
+    if (r.w && r.h) parts.push(r);
+  }
+  return parts.length ? parts.reduce(union) : null;
 }
 
 type Particle = { k: number; item: Item };
@@ -123,6 +168,8 @@ export default function Overlay() {
   // Window rect when a native window drag started (moving the whole window, see below).
   const [nativeFrom, setNativeFrom] = useState<Rect | null>(null);
   const [drag, setDrag] = useState<{ id: string; dx: number; dy: number } | null>(null);
+  // what each cat box really shows, by id (see `occupied`)
+  const [occ, setOcc] = useState<Record<string, Rect>>({});
   const dragged = useRef(false);
   const [particles, setParticles] = useState<Particle[]>([]);
   const [queue, setQueue] = useState<Won[]>([]);
@@ -189,12 +236,11 @@ export default function Overlay() {
   const others = lobby
     ? lobby.members.filter((m) => m.id !== lobby.me && !prefs.hiddenPlayers.includes(m.id)).slice(0, prefs.maxCats)
     : [];
-  // The cat art ends 14 units above the figure's bottom (see remoteLayout); its body starts
-  // HAT_ROOM units below the top, the rest is room for a hat that may overlap the cat above.
-  const hat = HAT_ROOM * L.u;
+  // The cat art ends 14 units above the figure's bottom (see remoteLayout). What each box really
+  // shows is measured after rendering (`occ`); until then the whole box counts.
   const spots = lineSpots(
-    others.length, prefs.catLayout === "column", { x: me[0], y: me[1] + TOP + hat, w: L.w, h: L.h - TOP - hat },
-    me[1] + TOP + L.boxH - 14 * L.u, R.w, R.h, R.top + HAT_ROOM * R.u, R.top + R.figH - 14 * R.u, S,
+    prefs.catLayout === "column", { x: me[0], y: me[1], w: L.w, h: L.h }, occ.me ?? { x: 0, y: 0, w: L.w, h: L.h },
+    me[1] + TOP + L.boxH - 14 * L.u, others.map((m) => occ[m.id] ?? { x: 0, y: 0, w: R.w, h: R.h }), R.w, R.top + R.figH - 14 * R.u, S,
   );
   const free = prefs.catLayout === "free";
   const otherBase = (id: string, i: number): Pos => clamp(free ? (prefs.catPos[id] ?? spots[i]) : spots[i], R.w, R.h);
@@ -303,7 +349,7 @@ export default function Overlay() {
       const r = el.getBoundingClientRect();
       return [el.dataset.hit, r.x, r.y, r.width, r.height];
     });
-    const solid = [...document.querySelectorAll<HTMLElement>("[data-hit] [data-figure] img, [data-hit] button, [data-hit] input")]
+    const solid = [...document.querySelectorAll<HTMLElement>("[data-hit] [data-figure] img, [data-hit] [data-solid], [data-hit] button, [data-hit] input")]
       .flatMap((el) => {
         const r = el.getBoundingClientRect();
         const m = el instanceof HTMLImageElement ? maskOf(el.src) : null;
@@ -312,6 +358,11 @@ export default function Overlay() {
         return m.map(([x, y, w, h]) => [r.x + (flip ? 1 - x - w : x) * r.width, r.y + y * r.height, w * r.width, h * r.height]);
       })
       .map((r) => r.map(Math.round));
+    const shown = Object.fromEntries(els.flatMap((el) => {
+      const r = occupied(el);
+      return r ? [[el.dataset.hit!, r]] : [];
+    }));
+    if (JSON.stringify(shown) !== JSON.stringify(occ)) setOcc(shown);
     const json = JSON.stringify([rects, solid, !!drag]);
     if (json === lastHit.current) return;
     lastHit.current = json;
@@ -599,6 +650,7 @@ export default function Overlay() {
         >
           <div className={`flex items-center gap-1 ${prefs.hideCounter ? "hidden" : ""}`}>
             <span
+              data-solid
               title={score ? `Lifetime: ${score.lifetime}` : undefined}
               className="flex items-center gap-1 rounded-full border-2 border-outline bg-card px-2 font-heading text-sm font-semibold leading-5 tabular-nums text-foreground shadow-sticker-sm"
             >
