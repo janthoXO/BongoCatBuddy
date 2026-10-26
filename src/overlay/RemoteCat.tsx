@@ -141,7 +141,8 @@ export function RemoteCat({
   return (
     <div
       data-hit={member.id}
-      className="absolute"
+      // boxes may overlap (column layout): only the cat and its buttons take the pointer
+      className="pointer-events-none absolute"
       style={{ left: x, top: y, width: L.w, height: L.h }}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -218,7 +219,7 @@ export function RemoteCat({
       ))}
 
       <div
-        className="pointer-events-none absolute left-0 flex flex-col items-center gap-0.5"
+        className="pointer-events-none absolute left-0 z-10 flex flex-col items-center gap-0.5"
         style={{ top: L.top + L.figH - 14 * L.u, width: L.w }}
       >
         <div className="flex items-center gap-1">

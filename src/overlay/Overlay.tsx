@@ -70,24 +70,30 @@ function snap(p: Pos, w: number, h: number, fig: Rect, cats: Rect[], S: Rect & {
   ];
 }
 
+const GAP = 6; // px between lines of other cats
+const HAT_ROOM = 35; // units from the figure's top to the body art (CatFigure: OY - BODY.y - 64)
+
 /**
  * `n` spots of `w x h` lined up from our cat's box toward the side of the screen with more room:
- * a row runs along x (bottoms aligned with our cat), a column along y (centers aligned).
- * A full line wraps to the next one, also toward more room.
+ * a row runs along x with feet level with ours (`meFeet`, and `feet` px down inside a spot), a
+ * column along y, centers aligned. A full line wraps to the next one, also toward more room.
+ * Lines sit `GAP` apart, letting the empty `top` of each spot (bubble and hat room) overlap the cat before it.
  */
-function lineSpots(n: number, column: boolean, me: Rect, w: number, h: number, S: Rect & { top: number }) {
+function lineSpots(n: number, column: boolean, me: Rect, meFeet: number, w: number, h: number, top: number, feet: number, S: Rect & { top: number }) {
   const dx = me.x + me.w / 2 < S.w / 2 ? 1 : -1;
   const dy = me.y + me.h / 2 < (S.top + S.h) / 2 ? 1 : -1;
+  const line = h - top + GAP;
   // i-th spot of `size` past our box (at `from`, `len` long) in direction d
   const step = (from: number, len: number, size: number, d: number, i: number) => (d > 0 ? from + len + i * size : from - (i + 1) * size);
   const spots: Pos[] = [];
   for (let k = 0; spots.length < n; k++) {
     for (let i = 0; spots.length < n; i++) {
       const p: Pos = column
-        ? [me.x + (me.w - w) / 2 + dx * k * w, step(me.y, me.h, h, dy, i)]
-        : [step(me.x, me.w, w, dx, i), me.y + me.h - h + dy * k * h];
-      // off screen: next line; a line always gets one spot so this ends (too small a screen: overlap)
-      if (i > 0 && (p[0] < 0 || p[0] + w > S.w || p[1] < S.top || p[1] + h > S.h)) break;
+        ? [me.x + (me.w - w) / 2 + dx * k * w, step(me.y, me.h + GAP, line, dy, i) - top]
+        : [step(me.x, me.w, w, dx, i), meFeet - feet + dy * k * line];
+      // off screen along the line: next line; a line always gets one spot so this ends (too small a
+      // screen: overlap). Across it the spots are clamped onto the screen later.
+      if (i > 0 && (column ? p[1] < S.top || p[1] + h > S.h : p[0] < 0 || p[0] + w > S.w)) break;
       spots.push(p);
     }
   }
@@ -182,7 +188,13 @@ export default function Overlay() {
   const others = lobby
     ? lobby.members.filter((m) => m.id !== lobby.me && !prefs.hiddenPlayers.includes(m.id)).slice(0, prefs.maxCats)
     : [];
-  const spots = lineSpots(others.length, prefs.catLayout === "column", { x: me[0], y: me[1], w: L.w, h: L.h }, R.w, R.h, S);
+  // The cat art ends 14 units above the figure's bottom (see remoteLayout); its body starts
+  // HAT_ROOM units below the top, the rest is room for a hat that may overlap the cat above.
+  const hat = HAT_ROOM * L.u;
+  const spots = lineSpots(
+    others.length, prefs.catLayout === "column", { x: me[0], y: me[1] + TOP + hat, w: L.w, h: L.h - TOP - hat },
+    me[1] + TOP + L.boxH - 14 * L.u, R.w, R.h, R.top + HAT_ROOM * R.u, R.top + R.figH - 14 * R.u, S,
+  );
   const free = prefs.catLayout === "free";
   const otherBase = (id: string, i: number): Pos => clamp(free ? (prefs.catPos[id] ?? spots[i]) : spots[i], R.w, R.h);
   const placed = others.map((m, i) => {
@@ -273,10 +285,12 @@ export default function Overlay() {
     addEventListener("pointerup", up);
   };
 
-  // Tell Rust where the boxes are after every render that moved one.
+  // Tell Rust where the boxes are after every render that moved one. Rust hovers the first rect
+  // under the cursor, so ours goes first: other cats' empty bubble room may overlap it (column).
   const lastHit = useRef("");
   useLayoutEffect(() => {
-    const rects = [...document.querySelectorAll<HTMLElement>("[data-hit]")].map((el) => {
+    const els = [...document.querySelectorAll<HTMLElement>("[data-hit]")];
+    const rects = [...els.filter((el) => el.dataset.hit === "me"), ...els.filter((el) => el.dataset.hit !== "me")].map((el) => {
       const r = el.getBoundingClientRect();
       return [el.dataset.hit, r.x, r.y, r.width, r.height];
     });
