@@ -18,7 +18,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -40,14 +40,14 @@ jobs:
 
     steps:
       - name: Download bundles
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: bundle-*-${{ needs.versioning.outputs.version }}
           path: ./artifacts
           merge-multiple: true
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ needs.versioning.outputs.version }}
           name: v${{ needs.versioning.outputs.version }}
@@ -65,12 +65,12 @@ jobs:
     steps:
       # the cask lives on main, also for tag-triggered releases
       - name: Checkout main
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: main
 
       - name: Download dmg
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: bundle-dmg-${{ needs.versioning.outputs.version }}
           path: ./artifacts
