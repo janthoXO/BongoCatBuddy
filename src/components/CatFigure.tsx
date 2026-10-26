@@ -73,6 +73,9 @@ export function CatFigure({ unit, skin, hat, left = false, right = false, flip =
   return (
     <div
       {...rest}
+      // the overlay reads these to make only the visible pixels clickable
+      data-figure
+      data-flip={flip || undefined}
       style={{
         position: "relative",
         width: FIGURE_W * unit,

@@ -11,6 +11,7 @@ import { CatFigure, FIGURE_H, FIGURE_W } from "@/components/CatFigure";
 import { EmoteParticle } from "@/components/EmoteParticle";
 import { CH, lobbySend, MAX_SPEECH, onLobbyMsg, remoteLayout, useLobby } from "@/lib/lobby";
 import { RemoteCat } from "./RemoteCat";
+import { maskOf, onMask } from "@/lib/mask";
 
 const UNIT = 1.25; // px per unit at catScale 1
 const HIT_MS = 100;
@@ -291,17 +292,30 @@ export default function Overlay() {
 
   // Tell Rust where the boxes are after every render that moved one. Rust hovers the first rect
   // under the cursor, so ours goes first: other cats' empty bubble room may overlap it (column).
+  // Clicks only land on what is solid: each sprite's opaque cells (its whole square until its
+  // mask is in) and the buttons; the rest of a box only hovers, clicks there go through.
   const lastHit = useRef("");
+  const [, setMasks] = useState(0);
+  useEffect(() => onMask(() => setMasks((n) => n + 1)), []);
   useLayoutEffect(() => {
     const els = [...document.querySelectorAll<HTMLElement>("[data-hit]")];
     const rects = [...els.filter((el) => el.dataset.hit === "me"), ...els.filter((el) => el.dataset.hit !== "me")].map((el) => {
       const r = el.getBoundingClientRect();
       return [el.dataset.hit, r.x, r.y, r.width, r.height];
     });
-    const json = JSON.stringify([rects, !!drag]);
+    const solid = [...document.querySelectorAll<HTMLElement>("[data-hit] [data-figure] img, [data-hit] button, [data-hit] input")]
+      .flatMap((el) => {
+        const r = el.getBoundingClientRect();
+        const m = el instanceof HTMLImageElement ? maskOf(el.src) : null;
+        if (!m) return [[r.x, r.y, r.width, r.height]];
+        const flip = !!el.closest("[data-flip]");
+        return m.map(([x, y, w, h]) => [r.x + (flip ? 1 - x - w : x) * r.width, r.y + y * r.height, w * r.width, h * r.height]);
+      })
+      .map((r) => r.map(Math.round));
+    const json = JSON.stringify([rects, solid, !!drag]);
     if (json === lastHit.current) return;
     lastHit.current = json;
-    invoke("set_hit_rects", { rects, hold: !!drag }).catch(() => {});
+    invoke("set_hit_rects", { rects, solid, hold: !!drag }).catch(() => {});
   });
 
   // Multiplayer: what others see of us, and what they send us.
