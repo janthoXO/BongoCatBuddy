@@ -20,7 +20,7 @@ const SECTIONS: { title: string; icon: ComponentType<{ className?: string }>; ro
       ["lockPosition", "Lock cat position", "Stop the cat from being dragged around."],
       ["flip", "Flip cat", "Mirror the cat horizontally."],
       ["ignoreMouse", "Mouse clicks don't count", "Only keyboard presses count as taps."],
-      ["hideCounter", "Only show score on hover", "Hide the tap counter until you point at the cat."],
+      ["hideCounter", "Hide score bar", "Click your cat to show or hide the score and buttons."],
       ["catBobbing", "Cat bobbing", "Let the cat bounce along while you type."],
     ],
   },

@@ -240,12 +240,16 @@ export default function Overlay() {
     setNativeFrom(win);
     getCurrentWindow().startDragging().catch(() => setNativeFrom(null));
   };
-  // Rust reports the release (the page never sees it during a native drag): save where we are,
-  // snapped to the screen edges unless Alt is held. The other cats follow ours, so no cat lines.
+  // Clicking our cat (no drag) shows or hides the score bar.
+  const toggleBar = () => update({ hideCounter: !prefs.hideCounter });
+  // Rust reports the release (the page never sees it during a native drag, nor the click): save
+  // where we are, snapped to the screen edges unless Alt is held. The other cats follow ours, so
+  // no cat lines. Not moved: it was a click.
   const endNative = useRef((_alt: boolean) => {});
   endNative.current = (alt) => {
     if (!nativeFrom) return;
-    update({ myPos: clamp(alt ? me : snap(me, L.w, L.h, myFig, [], S), L.w, L.h) });
+    if (shift[0] || shift[1]) update({ myPos: clamp(alt ? me : snap(me, L.w, L.h, myFig, [], S), L.w, L.h) });
+    else toggleBar();
     setNativeFrom(null);
   };
   useEffect(() => {
@@ -476,7 +480,7 @@ export default function Overlay() {
         >
           {wheel && wheelItems.length > 0 && (
             <div
-              className="pointer-events-auto absolute"
+              className="pointer-events-none absolute z-10"
               style={{ left: (L.w - WHEEL_W) / 2, top: TOP + WHEEL_CY - WHEEL_R - 13, width: WHEEL_W, height: WHEEL_R + 26 }}
             >
               {wheelItems.map((it, i) => {
@@ -490,7 +494,7 @@ export default function Overlay() {
                       e.stopPropagation();
                       useEmote(it);
                     }}
-                    className="wheel-pop absolute flex size-[26px] items-center justify-center rounded-full border-2 bg-card shadow-sticker-sm"
+                    className="wheel-pop pointer-events-auto absolute flex size-[26px] items-center justify-center rounded-full border-2 bg-card shadow-sticker-sm"
                     style={{
                       left: WHEEL_W / 2 - WHEEL_R * Math.cos(th) - 13,
                       top: WHEEL_R + 13 - WHEEL_R * Math.sin(th) - 13,
@@ -513,6 +517,7 @@ export default function Overlay() {
             className={`pointer-events-auto absolute ${prefs.catBobbing ? "bob" : ""}`}
             style={{ left: boxLeft, top: TOP, width: L.boxW, height: L.boxH }}
             onPointerDown={prefs.lockPosition ? undefined : wholeWindow ? startWindowDrag : startDrag("me", myBase, L.w, L.h, myFig)}
+            onClick={!prefs.lockPosition && wholeWindow ? undefined : () => !dragged.current && toggleBar()}
             onContextMenu={(e) => {
               e.preventDefault();
               openMenu();
@@ -578,12 +583,10 @@ export default function Overlay() {
           className="absolute left-0 flex flex-col items-center gap-1"
           style={{ top: TOP + L.boxH + 2, width: L.w }}
         >
-          <div className="flex items-center gap-1">
+          <div className={`flex items-center gap-1 ${prefs.hideCounter ? "hidden" : ""}`}>
             <span
               title={score ? `Lifetime: ${score.lifetime}` : undefined}
-              className={`flex items-center gap-1 rounded-full border-2 border-outline bg-card px-2 font-heading text-sm font-semibold leading-5 tabular-nums text-foreground shadow-sticker-sm ${
-                prefs.hideCounter ? showOnHover : ""
-              }`}
+              className="flex items-center gap-1 rounded-full border-2 border-outline bg-card px-2 font-heading text-sm font-semibold leading-5 tabular-nums text-foreground shadow-sticker-sm"
             >
               <PawPrint className="size-3.5 text-primary" />
               {score ? score.current.toLocaleString("en-US").replace(/,/g, " ") : "…"}
