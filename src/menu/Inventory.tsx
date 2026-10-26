@@ -19,15 +19,15 @@ const CATEGORIES = {
   hat: "Hats",
   skin: "Skins",
   emote: "Emotes",
-  other: "Other",
 } as const;
 type Category = keyof typeof CATEGORIES;
 
-function categoryOf(i: Item): Category {
+/** Tokens and UI themes (they only theme the game's own menus) have nothing to do here: not listed. */
+function categoryOf(i: Item): Category | null {
   if (i.slot === "hat") return "hat";
   if (i.slot === "skin") return "skin";
   if (i.slot === "emote" || i.slot === "consumable") return "emote";
-  return "other";
+  return null;
 }
 
 const toggle = (list: number[], id: number) =>
@@ -55,8 +55,11 @@ export function Inventory() {
     );
   }, [owned, showHidden, prefs.hidden, query, qualities]);
   const counts = useMemo(() => {
-    const c: Record<Category, number> = { hat: 0, skin: 0, emote: 0, other: 0 };
-    for (const i of visible) c[categoryOf(i)]++;
+    const c: Record<Category, number> = { hat: 0, skin: 0, emote: 0 };
+    for (const i of visible) {
+      const cat = categoryOf(i);
+      if (cat) c[cat]++;
+    }
     return c;
   }, [visible]);
   const items = useMemo(() => {
