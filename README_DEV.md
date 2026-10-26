@@ -96,9 +96,23 @@ Chat: UTF-8 JSON `{"Channel":n,"Message":"..."}`.
 Rest:
 - Lobby code = base59 of lobby id, alphabet `0123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz`. Or custom `LOBBYCODE`.
 - Random join widens distance filter `Default` -> `Far` -> `Worldwide`, needs 1 open slot.
+- Public list: Steam caps a lobby list at 50 and has no offset. Next page = same request with `LOBBY_NAME` `NotEqual` every name already shown. Only one list request at a time (a second cancels the first), so `list_lobbies` holds a lock.
 - Max 250 members.
 - Rich presence `connect` = raw lobby id (friends join via Steam).
 - Members polled every 500 ms. Reason: steamworks 0.13 `LobbyChatUpdate` callback panics on combined flags.
+
+### Joining from Steam
+
+Buddy runs as app 3419430, so Steam treats it as the game. Tested on macOS (issue #7):
+
+| Case | What happens |
+|---|---|
+| Buddy running, game not | Invite / `steam://joinlobby/3419430/<lobby>/<user>` arrive in Buddy as `GameLobbyJoinRequested`. Friends list "Join game" uses our rich presence `connect` and arrives as `GameRichPresenceJoinRequested`. Both go to `join_later` in `lobby.rs`. Works. |
+| Buddy running, user starts game | Steam refuses: `LaunchApp ... WaitingPrevProcess`, then `AppError_16`. Game cannot start while Buddy runs. |
+| Nothing running | Steam starts the real game with `+connect_lobby <id>`. Buddy cannot catch this, no hook for `steam://` links. |
+| Game running, then Buddy | Not tested (game would not launch on the test Mac). Unknown who gets the callback. |
+
+steamworks 0.13 wraps both callbacks, so no raw `sys` needed.
 
 ## Dev driver
 

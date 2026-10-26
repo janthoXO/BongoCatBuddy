@@ -31,7 +31,9 @@ export type Visibility = 0 | 1 | 2; // private, friends only, public
 export const VISIBILITY_NAMES = ["Private", "Friends", "Public"] as const;
 
 export type ListedLobby = { id: string; name: string; members: number; max: number };
-export type Friend = { id: string; name: string; in_game: boolean };
+export type LobbyPage = { lobbies: ListedLobby[]; more: boolean };
+/** `lobby`: raw id of the lobby they are in, when Steam knows it. */
+export type Friend = { id: string; name: string; in_game: boolean; lobby: string | null };
 
 /** Lobby chat channels, as the game numbers them. */
 export const CH = {

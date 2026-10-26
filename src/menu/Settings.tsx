@@ -4,9 +4,10 @@ import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { CatIcon, GiftIcon, HammerIcon, MonitorIcon, SmileIcon, UsersIcon } from "lucide-react";
 import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { CAT_SCALES, MAX_CATS_CHOICES, usePrefs, type Prefs } from "@/lib/prefs";
+import { CAT_SCALE, MAX_CATS, usePrefs, type Prefs } from "@/lib/prefs";
 
 type BoolKey = { [K in keyof Prefs]-?: Prefs[K] extends boolean ? K : never }[keyof Prefs];
 
@@ -93,6 +94,24 @@ function Choice({ label, desc, value, options, onChange }: { label: string; desc
   );
 }
 
+const pct = (v: number) => `${Math.round(v * 100)}%`;
+
+function Range({ label, range, value, format, onCommit }: { label: string; range: { min: number; max: number; step: number }; value: number; format: (v: number) => string; onCommit: (v: number) => void }) {
+  // shown value follows the drag; the pref only changes on release so the overlay doesn't resize every tick
+  const [shown, setShown] = useState(value);
+  useEffect(() => setShown(value), [value]);
+  const one = (v: number | readonly number[]) => (typeof v === "number" ? v : v[0]);
+  return (
+    <Field>
+      <div className="flex items-center justify-between">
+        <FieldLabel>{label}</FieldLabel>
+        <span className="font-heading tabular-nums">{format(shown)}</span>
+      </div>
+      <Slider {...range} value={shown} onValueChange={(v) => setShown(one(v))} onValueCommitted={(v) => onCommit(one(v))} />
+    </Field>
+  );
+}
+
 function Card({ title, icon: Icon, children }: { title: string; icon: ComponentType<{ className?: string }>; children: React.ReactNode }) {
   return (
     <section className="rounded-xl border-2 border-border bg-card p-4">
@@ -125,12 +144,7 @@ export function Settings() {
         {SECTIONS.map((s) => (
           <Card key={s.title} title={s.title} icon={s.icon}>
             {s.title === "Cat" && (
-              <Choice
-                label="Cat size"
-                value={String(prefs.catScale)}
-                options={CAT_SCALES.map((c) => [String(c), `${Math.round(c * 100)}%`])}
-                onChange={(v) => update({ catScale: Number(v) })}
-              />
+              <Range label="Cat size" range={CAT_SCALE} value={prefs.catScale} format={pct} onCommit={(v) => update({ catScale: v })} />
             )}
             {s.title === "Cat" && screens.length > 1 && (
               <Choice
@@ -150,18 +164,8 @@ export function Settings() {
                   options={[["row", "Row"], ["free", "Free"]]}
                   onChange={(v) => update({ catLayout: v as Prefs["catLayout"] })}
                 />
-                <Choice
-                  label="Other cats' size"
-                  value={String(prefs.remoteCatScale)}
-                  options={CAT_SCALES.map((c) => [String(c), `${Math.round(c * 100)}%`])}
-                  onChange={(v) => update({ remoteCatScale: Number(v) })}
-                />
-                <Choice
-                  label="Max cats shown"
-                  value={String(prefs.maxCats)}
-                  options={MAX_CATS_CHOICES.map((c) => [String(c), String(c)])}
-                  onChange={(v) => update({ maxCats: Number(v) })}
-                />
+                <Range label="Other cats' size" range={CAT_SCALE} value={prefs.remoteCatScale} format={pct} onCommit={(v) => update({ remoteCatScale: v })} />
+                <Range label="Max cats shown" range={MAX_CATS} value={prefs.maxCats} format={String} onCommit={(v) => update({ maxCats: v })} />
               </>
             )}
             {s.rows.map(([key, label, desc]) => (

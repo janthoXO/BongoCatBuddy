@@ -3,7 +3,7 @@ import { emit, listen } from "@tauri-apps/api/event";
 
 /** Player settings and local item state, shared by all windows. Defaults follow the game. */
 export type Prefs = {
-  /** cat size multiplier, one of CAT_SCALES */
+  /** cat size multiplier, within CAT_SCALE */
   catScale: number;
   alwaysOnTop: boolean;
   lockPosition: boolean;
@@ -31,9 +31,9 @@ export type Prefs = {
   lastLobby?: string;
   /** "row": other players' cats line up beside ours and follow it; "free": each is dragged on its own */
   catLayout: "row" | "free";
-  /** at most this many other cats are shown */
+  /** at most this many other cats are shown, within MAX_CATS */
   maxCats: number;
-  /** size of other players' cats, one of CAT_SCALES */
+  /** size of other players' cats, within CAT_SCALE */
   remoteCatScale: number;
   showPlayerNames: boolean;
   /** show what other players get from chests */
@@ -56,9 +56,9 @@ export type Prefs = {
   hidden: number[];
 };
 
-export const CAT_SCALES = [0.5, 0.75, 1, 1.25, 1.5, 2, 4];
+export const CAT_SCALE = { min: 0.5, max: 4, step: 0.05 };
 export const MAX_WHEEL_EMOTES = 8;
-export const MAX_CATS_CHOICES = [4, 8, 20, 50];
+export const MAX_CATS = { min: 1, max: 50, step: 1 };
 
 const DEFAULTS: Prefs = {
   catScale: 1,
@@ -94,9 +94,18 @@ const DEFAULTS: Prefs = {
 
 const KEY = "prefs";
 
+/** v inside the range; not a number: the default */
+function clamp(v: unknown, r: { min: number; max: number }, def: number) {
+  return typeof v === "number" && !Number.isNaN(v) ? Math.min(r.max, Math.max(r.min, v)) : def;
+}
+
 function load(): Prefs {
   try {
-    return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) ?? "{}") };
+    const p = { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) ?? "{}") };
+    p.catScale = clamp(p.catScale, CAT_SCALE, DEFAULTS.catScale);
+    p.remoteCatScale = clamp(p.remoteCatScale, CAT_SCALE, DEFAULTS.remoteCatScale);
+    p.maxCats = clamp(p.maxCats, MAX_CATS, DEFAULTS.maxCats);
+    return p;
   } catch {
     return DEFAULTS;
   }

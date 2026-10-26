@@ -100,6 +100,8 @@ pub struct Friend {
     name: String,
     /// playing the game (or this client) right now
     in_game: bool,
+    /// raw id of the lobby they are in, if Steam tells us
+    lobby: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -174,6 +176,9 @@ fn state(c: &Client, lobby: &Lobby) -> Option<State> {
 }
 
 fn list_lobbies(c: &Client, filter: LobbyListFilter) -> Result<Vec<LobbyId>, String> {
+    // Steam runs one list request at a time: a second one cancels the first, which then never answers.
+    static ONE: Mutex<()> = Mutex::new(());
+    let _one = ONE.lock().unwrap();
     let mm = c.matchmaking();
     mm.set_lobby_list_filter(filter);
     wait(|tx| {
@@ -354,40 +359,41 @@ pub async fn get_lobby(app: AppHandle) -> Result<Option<State>, String> {
 /// Creates a lobby (visibility 0 private, 1 friends, 2 public), optionally under a custom code.
 #[tauri::command]
 pub async fn lobby_create(app: AppHandle, visibility: u8, code: Option<String>) -> Result<(), String> {
-    run(app, move |c, l| {
-        let ty = lobby_type(visibility)?;
-        let code = code.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
-        if let Some(code) = &code {
-            if !(5..=12).contains(&code.len()) {
-                return Err("Lobby codes have 5 to 12 characters".into());
-            }
-            let taken = by_distance(DistanceFilter::Worldwide).set_string(Some(vec![StringFilter(
-                LobbyKey::new("LOBBYCODE"),
-                code,
-                StringFilterKind::Equal,
-            )]));
-            if !list_lobbies(c, taken)?.is_empty() {
-                return Err("That code is taken".into());
-            }
+    run(app, move |c, l| create(c, l, visibility, code).map(drop)).await
+}
+
+fn create(c: &Client, l: &Lobby, visibility: u8, code: Option<String>) -> Result<LobbyId, String> {
+    let ty = lobby_type(visibility)?;
+    let code = code.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    if let Some(code) = &code {
+        if !(5..=12).contains(&code.len()) {
+            return Err("Lobby codes have 5 to 12 characters".into());
         }
-        leave_current(c, l);
-        let mm = c.matchmaking();
-        let id = wait(|tx| {
-            mm.create_lobby(ty, MAX_MEMBERS, move |r| {
-                let _ = tx.send(r);
-            })
-        })?
-        .map_err(|e| e.to_string())?;
-        mm.set_lobby_data(id, "PRIVATE_LOBBY", &visibility.to_string());
-        mm.set_lobby_data(id, "z_heathenMode", "General");
-        mm.set_lobby_data(id, "LOBBY_NAME", &format!("{}'s Lobby", c.friends().name()));
-        if let Some(code) = &code {
-            mm.set_lobby_data(id, "LOBBYCODE", code);
+        let taken = by_distance(DistanceFilter::Worldwide).set_string(Some(vec![StringFilter(
+            LobbyKey::new("LOBBYCODE"),
+            code,
+            StringFilterKind::Equal,
+        )]));
+        if !list_lobbies(c, taken)?.is_empty() {
+            return Err("That code is taken".into());
         }
-        entered(c, l, id);
-        Ok(())
-    })
-    .await
+    }
+    leave_current(c, l);
+    let mm = c.matchmaking();
+    let id = wait(|tx| {
+        mm.create_lobby(ty, MAX_MEMBERS, move |r| {
+            let _ = tx.send(r);
+        })
+    })?
+    .map_err(|e| e.to_string())?;
+    mm.set_lobby_data(id, "PRIVATE_LOBBY", &visibility.to_string());
+    mm.set_lobby_data(id, "z_heathenMode", "General");
+    mm.set_lobby_data(id, "LOBBY_NAME", &format!("{}'s Lobby", c.friends().name()));
+    if let Some(code) = &code {
+        mm.set_lobby_data(id, "LOBBYCODE", code);
+    }
+    entered(c, l, id);
+    Ok(id)
 }
 
 /// Joins by lobby code (custom code or encoded id).
@@ -418,12 +424,27 @@ pub async fn lobby_join_random(app: AppHandle) -> Result<(), String> {
     .await
 }
 
-/// Public lobbies worldwide, fullest first.
+/// Steam hands out at most this many lobbies per request, whatever count we ask for.
+const PAGE: usize = 50;
+
+#[derive(Serialize)]
+pub struct LobbyPage {
+    lobbies: Vec<Listed>,
+    /// Steam gave a full page, so asking again with these names skipped may find more.
+    more: bool,
+}
+
+/// Public lobbies worldwide, fullest first. Steam has no offset and caps a list at 50, so the
+/// next page is the same request with every lobby name seen so far filtered out.
+// ponytail: a lobby named like one already seen never shows up; fine while names are mostly "<name>'s Lobby"
 #[tauri::command]
-pub async fn lobby_list(app: AppHandle) -> Result<Vec<Listed>, String> {
-    run(app, |c, _| {
+pub async fn lobby_list(app: AppHandle, skip: Vec<String>) -> Result<LobbyPage, String> {
+    run(app, move |c, _| {
         let mm = c.matchmaking();
-        let mut out: Vec<Listed> = list_lobbies(c, by_distance(DistanceFilter::Worldwide))?
+        let not = skip.iter().map(|n| StringFilter(LobbyKey::new("LOBBY_NAME"), n, StringFilterKind::NotEqual)).collect();
+        let found = list_lobbies(c, by_distance(DistanceFilter::Worldwide).set_string(Some(not)))?;
+        let more = found.len() >= PAGE;
+        let mut out: Vec<Listed> = found
             .into_iter()
             .filter(|&id| data(c, id, "LobbyClosed").is_none())
             .map(|id| Listed {
@@ -434,7 +455,7 @@ pub async fn lobby_list(app: AppHandle) -> Result<Vec<Listed>, String> {
             })
             .collect();
         out.sort_by_key(|l| std::cmp::Reverse(l.members));
-        Ok(out)
+        Ok(LobbyPage { lobbies: out, more })
     })
     .await
 }
@@ -507,10 +528,16 @@ pub async fn lobby_friends(app: AppHandle) -> Result<Vec<Friend>, String> {
             .get_friends(FriendFlags::IMMEDIATE)
             .into_iter()
             .filter(|f| f.state() != FriendState::Offline)
-            .map(|f| Friend {
-                id: f.id().raw().to_string(),
-                name: f.name(),
-                in_game: f.game_played().is_some_and(|g| g.game.app_id() == app_id),
+            .map(|f| {
+                let game = f.game_played().filter(|g| g.game.app_id() == app_id);
+                // the game and Buddy both put the raw lobby id in `connect`
+                let lobby = game.as_ref().map(|g| g.lobby.raw()).filter(|&id| id != 0).map(|id| id.to_string());
+                Friend {
+                    id: f.id().raw().to_string(),
+                    name: f.name(),
+                    in_game: game.is_some(),
+                    lobby: lobby.or_else(|| f.rich_presence("connect").filter(|v| v.parse::<u64>().is_ok())),
+                }
             })
             .collect();
         out.sort_by_key(|f| (!f.in_game, f.name.to_lowercase()));
@@ -519,16 +546,20 @@ pub async fn lobby_friends(app: AppHandle) -> Result<Vec<Friend>, String> {
     .await
 }
 
+/// Invites a friend to our lobby, creating a friends-only one when we are in none. Returns the lobby id.
 #[tauri::command]
-pub async fn lobby_invite(app: AppHandle, friend: String) -> Result<(), String> {
-    run(app, move |_, l| {
-        let id = l.current().ok_or("Not in a lobby")?;
+pub async fn lobby_invite(app: AppHandle, friend: String) -> Result<String, String> {
+    run(app, move |c, l| {
         let friend: u64 = friend.parse().map_err(|_| "bad friend id")?;
+        let id = match l.current() {
+            Some(id) => id,
+            None => create(c, l, 1, None)?,
+        };
         // not wrapped by the steamworks crate
         let ok = unsafe {
             sys::SteamAPI_ISteamMatchmaking_InviteUserToLobby(sys::SteamAPI_SteamMatchmaking_v009(), id.raw(), friend)
         };
-        if ok { Ok(()) } else { Err("Steam refused the invite".into()) }
+        if ok { Ok(id.raw().to_string()) } else { Err("Steam refused the invite".into()) }
     })
     .await
 }

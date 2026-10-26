@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useState, type ComponentType, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { CopyIcon, EyeIcon, EyeOffIcon, GiftIcon, GlobeIcon, LogOutIcon, RefreshCwIcon, UsersIcon } from "lucide-react";
+import { ChevronRightIcon, CopyIcon, EllipsisIcon, EyeIcon, EyeOffIcon, GiftIcon, GlobeIcon, LogInIcon, LogOutIcon, RefreshCwIcon, UserPlusIcon, UsersIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { iconUrl, useItems } from "@/lib/items";
-import { VISIBILITY_NAMES, useLobby, type Friend, type ListedLobby, type LobbyState, type Visibility } from "@/lib/lobby";
+import { VISIBILITY_NAMES, useLobby, type Friend, type ListedLobby, type LobbyPage, type LobbyState, type Visibility } from "@/lib/lobby";
 import { usePrefs } from "@/lib/prefs";
 
 const chipClass =
@@ -72,21 +73,27 @@ function useRun() {
 
 function PublicLobbies({ busy, run }: { busy: boolean; run: ReturnType<typeof useRun>[1] }) {
   const [list, setList] = useState<ListedLobby[] | null>(null);
+  const [more, setMore] = useState(false);
   const [loading, setLoading] = useState(false);
-  const load = useCallback(() => {
+  // Steam has no offset: the next page skips every lobby name we already have (unnamed ones can repeat, so dedupe by id)
+  const load = useCallback((have: ListedLobby[]) => {
     setLoading(true);
-    invoke<ListedLobby[]>("lobby_list")
-      .then(setList)
+    invoke<LobbyPage>("lobby_list", { skip: [...new Set(have.map((l) => l.name).filter(Boolean))] })
+      .then((p) => {
+        setList([...have, ...p.lobbies.filter((l) => !have.some((h) => h.id === l.id))]);
+        setMore(p.more);
+      })
       .catch((e) => {
-        setList([]);
+        setList(have);
+        setMore(false);
         fail(e);
       })
       .finally(() => setLoading(false));
   }, []);
-  useEffect(load, [load]);
+  useEffect(() => load([]), [load]);
 
   return (
-    <Card title="Public lobbies" icon={GlobeIcon} action={<Refresh onClick={load} loading={loading} />}>
+    <Card title="Public lobbies" icon={GlobeIcon} action={<Refresh onClick={() => load([])} loading={loading} />}>
       {list?.length === 0 ? (
         <Empty className="p-4">
           <EmptyHeader>
@@ -108,11 +115,17 @@ function PublicLobbies({ busy, run }: { busy: boolean; run: ReturnType<typeof us
         ))
       )}
       {!list && <Spinner className="mx-auto" />}
+      {more && (
+        <Button variant="outline" disabled={loading} onClick={() => load(list ?? [])}>
+          {loading && <Spinner />}
+          Load more
+        </Button>
+      )}
     </Card>
   );
 }
 
-function Browse() {
+function Browse({ friends }: { friends: ReactNode }) {
   const [busy, run] = useRun();
   const [code, setCode] = useState("");
   const [custom, setCustom] = useState("");
@@ -151,50 +164,105 @@ function Browse() {
           </Button>
         </div>
       </Card>
+      {friends}
       <PublicLobbies busy={busy} run={run} />
     </>
   );
 }
 
-function Invite() {
+/** Friend ids we invited, by lobby id. */
+type Invited = Record<string, string[]>;
+
+function FriendRow({ f, lobby, invited, onInvite }: { f: Friend; lobby: LobbyState | null; invited: boolean; onInvite: () => void }) {
+  const [busy, run] = useRun();
+  const [open, setOpen] = useState(false);
+  const here = f.lobby != null && f.lobby === lobby?.id;
+  return (
+    <div
+      className="flex items-center gap-2"
+      onContextMenu={(e) => {
+        e.preventDefault();
+        setOpen(true);
+      }}
+    >
+      <span className="min-w-0 flex-1 truncate font-medium">{f.name}</span>
+      {here ? <Badge>In your lobby</Badge> : f.lobby && <Badge variant="secondary">In a lobby</Badge>}
+      {invited && <Badge variant="outline">Invited</Badge>}
+      <DropdownMenu open={open} onOpenChange={setOpen}>
+        <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label="More" />}>
+          <EllipsisIcon />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-auto">
+          {f.in_game && (
+            <DropdownMenuItem disabled={busy || !f.lobby || here} onClick={() => run("lobby_join_id", { id: f.lobby })}>
+              <LogInIcon />
+              Join game
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem disabled={invited || here} onClick={onInvite}>
+            <UserPlusIcon />
+            {lobby ? "Invite to lobby" : "Create lobby and invite"}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
+/** Online friends: the ones playing Bongo Cat (game or Buddy) up top, the rest folded away. */
+function Friends({ lobby, invited, onInvited }: { lobby: LobbyState | null; invited: Invited; onInvited: (lobby: string, friend: string) => void }) {
   const [friends, setFriends] = useState<Friend[] | null>(null);
-  const [invited, setInvited] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const poll = useCallback(
+    () =>
+      invoke<Friend[]>("lobby_friends")
+        .then(setFriends)
+        .catch((e) => {
+          setFriends([]);
+          fail(e);
+        }),
+    [],
+  );
   const load = useCallback(() => {
     setLoading(true);
-    invoke<Friend[]>("lobby_friends")
-      .then(setFriends)
-      .catch((e) => {
-        setFriends([]);
-        fail(e);
-      })
-      .finally(() => setLoading(false));
-  }, []);
-  useEffect(load, [load]);
+    poll().finally(() => setLoading(false));
+  }, [poll]);
+  useEffect(() => {
+    load();
+    // ponytail: poll, PersonaStateChange push if 5 s feels slow
+    const t = setInterval(poll, 5000);
+    return () => clearInterval(t);
+  }, [load, poll]);
 
   const invite = (id: string) =>
-    invoke("lobby_invite", { friend: id })
-      .then(() => setInvited((v) => [...v, id]))
+    invoke<string>("lobby_invite", { friend: id })
+      .then((l) => onInvited(l, id))
       .catch(fail);
+  const row = (f: Friend) => (
+    <FriendRow key={f.id} f={f} lobby={lobby} invited={!!lobby && !!invited[lobby.id]?.includes(f.id)} onInvite={() => invite(f.id)} />
+  );
+  const playing = friends?.filter((f) => f.in_game) ?? [];
+  const others = friends?.filter((f) => !f.in_game) ?? [];
 
   return (
-    <Card title="Invite friends" icon={UsersIcon} action={<Refresh onClick={load} loading={loading} />}>
-      {friends?.length === 0 && <p className="text-sm text-muted-foreground">No friends online.</p>}
-      {friends?.map((f) => (
-        <div key={f.id} className="flex items-center gap-2">
-          <span className="min-w-0 flex-1 truncate font-medium">{f.name}</span>
-          {f.in_game && <Badge variant="secondary">Playing</Badge>}
-          <Button size="sm" disabled={invited.includes(f.id)} onClick={() => invite(f.id)}>
-            {invited.includes(f.id) ? "Invited" : "Invite"}
-          </Button>
-        </div>
-      ))}
+    <Card title="Friends" icon={UsersIcon} action={<Refresh onClick={load} loading={loading} />}>
+      {friends && playing.length === 0 && <p className="text-sm text-muted-foreground">No friends playing Bongo Cat right now.</p>}
+      {playing.map(row)}
+      {others.length > 0 && (
+        <details className="group">
+          <summary className="flex cursor-pointer list-none items-center gap-1 text-sm font-medium text-muted-foreground">
+            <ChevronRightIcon className="size-4 transition-transform group-open:rotate-90" />
+            Other online friends · {others.length}
+          </summary>
+          <div className="mt-3 flex flex-col gap-3">{others.map(row)}</div>
+        </details>
+      )}
       {!friends && <Spinner className="mx-auto" />}
     </Card>
   );
 }
 
-function Joined({ lobby }: { lobby: LobbyState }) {
+function Joined({ lobby, friends }: { lobby: LobbyState; friends: ReactNode }) {
   const { catalog } = useItems();
   const [prefs, update] = usePrefs();
   const [busy, run] = useRun();
@@ -270,7 +338,7 @@ function Joined({ lobby }: { lobby: LobbyState }) {
           );
         })}
       </Card>
-      <Invite />
+      {friends}
     </>
   );
 }
@@ -282,9 +350,14 @@ export function Lobby() {
     return () => void un.then((f) => f());
   }, []);
 
+  // lives here so an invite that creates a lobby (Browse -> Joined) keeps it
+  const [invited, setInvited] = useState<Invited>({});
+  const onInvited = useCallback((l: string, f: string) => setInvited((v) => ({ ...v, [l]: [...(v[l] ?? []), f] })), []);
+  const friends = <Friends lobby={lobby} invited={invited} onInvited={onInvited} />;
+
   return (
     <ScrollArea className="min-h-0 flex-1">
-      <div className="flex flex-col gap-3 p-1 pr-3">{lobby ? <Joined lobby={lobby} /> : <Browse />}</div>
+      <div className="flex flex-col gap-3 p-1 pr-3">{lobby ? <Joined lobby={lobby} friends={friends} /> : <Browse friends={friends} />}</div>
     </ScrollArea>
   );
 }
