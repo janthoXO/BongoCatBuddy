@@ -11,7 +11,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { iconUrl, useItems } from "@/lib/items";
-import { VISIBILITY_NAMES, useLobby, type Friend, type ListedLobby, type LobbyState, type Visibility } from "@/lib/lobby";
+import { VISIBILITY_NAMES, useLobby, type Friend, type ListedLobby, type LobbyPage, type LobbyState, type Visibility } from "@/lib/lobby";
 import { usePrefs } from "@/lib/prefs";
 
 const chipClass =
@@ -72,21 +72,27 @@ function useRun() {
 
 function PublicLobbies({ busy, run }: { busy: boolean; run: ReturnType<typeof useRun>[1] }) {
   const [list, setList] = useState<ListedLobby[] | null>(null);
+  const [more, setMore] = useState(false);
   const [loading, setLoading] = useState(false);
-  const load = useCallback(() => {
+  // Steam has no offset: the next page skips every lobby name we already have (unnamed ones can repeat, so dedupe by id)
+  const load = useCallback((have: ListedLobby[]) => {
     setLoading(true);
-    invoke<ListedLobby[]>("lobby_list")
-      .then(setList)
+    invoke<LobbyPage>("lobby_list", { skip: [...new Set(have.map((l) => l.name).filter(Boolean))] })
+      .then((p) => {
+        setList([...have, ...p.lobbies.filter((l) => !have.some((h) => h.id === l.id))]);
+        setMore(p.more);
+      })
       .catch((e) => {
-        setList([]);
+        setList(have);
+        setMore(false);
         fail(e);
       })
       .finally(() => setLoading(false));
   }, []);
-  useEffect(load, [load]);
+  useEffect(() => load([]), [load]);
 
   return (
-    <Card title="Public lobbies" icon={GlobeIcon} action={<Refresh onClick={load} loading={loading} />}>
+    <Card title="Public lobbies" icon={GlobeIcon} action={<Refresh onClick={() => load([])} loading={loading} />}>
       {list?.length === 0 ? (
         <Empty className="p-4">
           <EmptyHeader>
@@ -108,6 +114,12 @@ function PublicLobbies({ busy, run }: { busy: boolean; run: ReturnType<typeof us
         ))
       )}
       {!list && <Spinner className="mx-auto" />}
+      {more && (
+        <Button variant="outline" disabled={loading} onClick={() => load(list ?? [])}>
+          {loading && <Spinner />}
+          Load more
+        </Button>
+      )}
     </Card>
   );
 }

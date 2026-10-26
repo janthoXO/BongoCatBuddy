@@ -96,6 +96,7 @@ Chat: UTF-8 JSON `{"Channel":n,"Message":"..."}`.
 Rest:
 - Lobby code = base59 of lobby id, alphabet `0123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz`. Or custom `LOBBYCODE`.
 - Random join widens distance filter `Default` -> `Far` -> `Worldwide`, needs 1 open slot.
+- Public list: Steam caps a lobby list at 50 and has no offset. Next page = same request with `LOBBY_NAME` `NotEqual` every name already shown. Only one list request at a time (a second cancels the first), so `list_lobbies` holds a lock.
 - Max 250 members.
 - Rich presence `connect` = raw lobby id (friends join via Steam).
 - Members polled every 500 ms. Reason: steamworks 0.13 `LobbyChatUpdate` callback panics on combined flags.

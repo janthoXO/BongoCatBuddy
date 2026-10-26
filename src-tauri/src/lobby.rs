@@ -174,6 +174,9 @@ fn state(c: &Client, lobby: &Lobby) -> Option<State> {
 }
 
 fn list_lobbies(c: &Client, filter: LobbyListFilter) -> Result<Vec<LobbyId>, String> {
+    // Steam runs one list request at a time: a second one cancels the first, which then never answers.
+    static ONE: Mutex<()> = Mutex::new(());
+    let _one = ONE.lock().unwrap();
     let mm = c.matchmaking();
     mm.set_lobby_list_filter(filter);
     wait(|tx| {
@@ -418,12 +421,27 @@ pub async fn lobby_join_random(app: AppHandle) -> Result<(), String> {
     .await
 }
 
-/// Public lobbies worldwide, fullest first.
+/// Steam hands out at most this many lobbies per request, whatever count we ask for.
+const PAGE: usize = 50;
+
+#[derive(Serialize)]
+pub struct LobbyPage {
+    lobbies: Vec<Listed>,
+    /// Steam gave a full page, so asking again with these names skipped may find more.
+    more: bool,
+}
+
+/// Public lobbies worldwide, fullest first. Steam has no offset and caps a list at 50, so the
+/// next page is the same request with every lobby name seen so far filtered out.
+// ponytail: a lobby named like one already seen never shows up; fine while names are mostly "<name>'s Lobby"
 #[tauri::command]
-pub async fn lobby_list(app: AppHandle) -> Result<Vec<Listed>, String> {
-    run(app, |c, _| {
+pub async fn lobby_list(app: AppHandle, skip: Vec<String>) -> Result<LobbyPage, String> {
+    run(app, move |c, _| {
         let mm = c.matchmaking();
-        let mut out: Vec<Listed> = list_lobbies(c, by_distance(DistanceFilter::Worldwide))?
+        let not = skip.iter().map(|n| StringFilter(LobbyKey::new("LOBBY_NAME"), n, StringFilterKind::NotEqual)).collect();
+        let found = list_lobbies(c, by_distance(DistanceFilter::Worldwide).set_string(Some(not)))?;
+        let more = found.len() >= PAGE;
+        let mut out: Vec<Listed> = found
             .into_iter()
             .filter(|&id| data(c, id, "LobbyClosed").is_none())
             .map(|id| Listed {
@@ -434,7 +452,7 @@ pub async fn lobby_list(app: AppHandle) -> Result<Vec<Listed>, String> {
             })
             .collect();
         out.sort_by_key(|l| std::cmp::Reverse(l.members));
-        Ok(out)
+        Ok(LobbyPage { lobbies: out, more })
     })
     .await
 }
