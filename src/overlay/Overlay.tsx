@@ -175,7 +175,7 @@ export default function Overlay() {
   }, [screen]);
 
   const S = screen ?? { x: 0, y: 0, w: innerWidth, h: innerHeight, top: 0 };
-  const R = remoteLayout(prefs.remoteCatScale);
+  const R = remoteLayout(prefs.catScale * prefs.remoteCatRatio);
   const clamp = ([x, y]: Pos, w: number, h: number): Pos => [
     Math.max(0, Math.min(x, S.w - w)),
     Math.max(S.top, Math.min(y, S.h - h)),

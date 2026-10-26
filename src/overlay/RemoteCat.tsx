@@ -48,7 +48,7 @@ export function RemoteCat({
   const live = useRef({ prefs, catalog });
   live.current = { prefs, catalog };
 
-  const L = remoteLayout(prefs.remoteCatScale);
+  const L = remoteLayout(prefs.catScale * prefs.remoteCatRatio);
 
   const burst = () => {
     const n = 1 + Math.floor(Math.random() * 3);

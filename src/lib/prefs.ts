@@ -33,8 +33,8 @@ export type Prefs = {
   catLayout: "row" | "column" | "free";
   /** at most this many other cats are shown, within MAX_CATS */
   maxCats: number;
-  /** size of other players' cats, within CAT_SCALE */
-  remoteCatScale: number;
+  /** other players' cats' size relative to ours, within REMOTE_RATIO */
+  remoteCatRatio: number;
   showPlayerNames: boolean;
   /** show what other players get from chests */
   multiplayerPopups: boolean;
@@ -57,6 +57,7 @@ export type Prefs = {
 };
 
 export const CAT_SCALE = { min: 0.5, max: 4, step: 0.05 };
+export const REMOTE_RATIO = { min: 0.25, max: 2, step: 0.05 };
 export const MAX_WHEEL_EMOTES = 8;
 export const MAX_CATS = { min: 1, max: 50, step: 1 };
 
@@ -79,7 +80,7 @@ const DEFAULTS: Prefs = {
   joinLastLobby: true,
   catLayout: "row",
   maxCats: 8,
-  remoteCatScale: 0.75,
+  remoteCatRatio: 0.75,
   showPlayerNames: true,
   multiplayerPopups: true,
   receivePats: true,
@@ -103,7 +104,7 @@ function load(): Prefs {
   try {
     const p = { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) ?? "{}") };
     p.catScale = clamp(p.catScale, CAT_SCALE, DEFAULTS.catScale);
-    p.remoteCatScale = clamp(p.remoteCatScale, CAT_SCALE, DEFAULTS.remoteCatScale);
+    p.remoteCatRatio = clamp(p.remoteCatRatio, REMOTE_RATIO, DEFAULTS.remoteCatRatio);
     p.maxCats = clamp(p.maxCats, MAX_CATS, DEFAULTS.maxCats);
     return p;
   } catch {
