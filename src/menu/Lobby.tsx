@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState, type ComponentType, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { ChevronRightIcon, CopyIcon, EllipsisIcon, EyeIcon, EyeOffIcon, GiftIcon, GlobeIcon, LogInIcon, LogOutIcon, RefreshCwIcon, UserPlusIcon, UsersIcon } from "lucide-react";
+import { ChevronRightIcon, CopyIcon, EllipsisIcon, EyeIcon, EyeOffIcon, GiftIcon, LogInIcon, LogOutIcon, RefreshCwIcon, UserPlusIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,28 +16,25 @@ import { VISIBILITY_NAMES, useLobby, type Friend, type ListedLobby, type LobbyPa
 import { usePrefs } from "@/lib/prefs";
 
 const chipClass =
-  "h-8 rounded-full border-2 border-border px-3 font-heading aria-pressed:border-outline aria-pressed:bg-primary aria-pressed:text-primary-foreground aria-pressed:shadow-sticker-sm aria-pressed:hover:bg-primary";
+  "h-7 rounded-md px-3 text-sm aria-pressed:bg-card dark:aria-pressed:bg-white/15 aria-pressed:shadow-sm";
 
 const fail = (e: unknown) => void toast.error(String(e));
 
-function Card({ title, icon: Icon, action, children }: { title: string; icon: ComponentType<{ className?: string }>; action?: ReactNode; children: ReactNode }) {
+function Card({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
   return (
-    <section className="rounded-xl border-2 border-border bg-card p-4">
-      <h2 className="mb-3 flex items-center gap-2 font-heading text-base font-semibold">
-        <span className="flex size-7 items-center justify-center rounded-full bg-secondary">
-          <Icon className="size-4 text-primary" />
-        </span>
+    <section className="flex flex-col gap-1.5">
+      <h2 className="flex items-center gap-2 px-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
         <span className="flex-1">{title}</span>
         {action}
       </h2>
-      <div className="flex flex-col gap-3">{children}</div>
+      <div className="flex flex-col gap-3 rounded-xl bg-card p-3">{children}</div>
     </section>
   );
 }
 
 function VisibilityPicker({ value, disabled, onChange }: { value: Visibility; disabled?: boolean; onChange: (v: Visibility) => void }) {
   return (
-    <ToggleGroup spacing={1} disabled={disabled} value={[String(value)]} onValueChange={(v) => v[0] && onChange(Number(v[0]) as Visibility)}>
+    <ToggleGroup spacing={0} className="w-fit rounded-lg bg-muted p-0.5" disabled={disabled} value={[String(value)]} onValueChange={(v) => v[0] && onChange(Number(v[0]) as Visibility)}>
       {VISIBILITY_NAMES.map((n, i) => (
         <ToggleGroupItem key={n} value={String(i)} className={chipClass}>
           {n}
@@ -93,7 +90,7 @@ function PublicLobbies({ busy, run }: { busy: boolean; run: ReturnType<typeof us
   useEffect(() => load([]), [load]);
 
   return (
-    <Card title="Public lobbies" icon={GlobeIcon} action={<Refresh onClick={() => load([])} loading={loading} />}>
+    <Card title="Public lobbies" action={<Refresh onClick={() => load([])} loading={loading} />}>
       {list?.length === 0 ? (
         <Empty className="p-4">
           <EmptyHeader>
@@ -134,7 +131,7 @@ function Browse({ friends }: { friends: ReactNode }) {
 
   return (
     <>
-      <Card title="Join" icon={UsersIcon}>
+      <Card title="Join">
         <div className="flex gap-2">
           <Input
             value={code}
@@ -152,7 +149,7 @@ function Browse({ friends }: { friends: ReactNode }) {
           Join random
         </Button>
       </Card>
-      <Card title="Create" icon={UsersIcon}>
+      <Card title="Create">
         <VisibilityPicker value={vis} onChange={setVis} />
         <div className="flex gap-2">
           <Input value={custom} maxLength={12} placeholder="Custom code (optional)" onChange={(e) => setCustom(e.target.value.trim())} />
@@ -245,7 +242,7 @@ function Friends({ lobby, invited, onInvited }: { lobby: LobbyState | null; invi
   const others = friends?.filter((f) => !f.in_game) ?? [];
 
   return (
-    <Card title="Friends" icon={UsersIcon} action={<Refresh onClick={load} loading={loading} />}>
+    <Card title="Friends" action={<Refresh onClick={load} loading={loading} />}>
       {friends && playing.length === 0 && <p className="text-sm text-muted-foreground">No friends playing Bongo Cat right now.</p>}
       {playing.map(row)}
       {others.length > 0 && (
@@ -282,7 +279,7 @@ function Joined({ lobby, friends }: { lobby: LobbyState; friends: ReactNode }) {
 
   return (
     <>
-      <Card title="Lobby" icon={UsersIcon}>
+      <Card title="Lobby">
         {lobby.owner ? (
           <Input
             value={name}
@@ -297,10 +294,10 @@ function Joined({ lobby, friends }: { lobby: LobbyState; friends: ReactNode }) {
         )}
         <div className="flex items-center gap-2">
           {lobby.visibility === 0 ? (
-            <span className="flex h-8 items-center rounded-full border-2 border-outline bg-card px-3 text-sm font-semibold shadow-sticker-sm">Private lobby</span>
+            <span className="rounded-md bg-muted px-2 py-1 text-sm">Private lobby</span>
           ) : (
             <>
-              <span className="flex h-8 items-center rounded-full border-2 border-outline bg-card px-3 font-mono text-sm font-semibold shadow-sticker-sm">{lobby.code}</span>
+              <span className="rounded-md bg-muted px-2 py-1 font-mono text-sm">{lobby.code}</span>
               <Button
                 variant="ghost"
                 size="icon-sm"
@@ -318,7 +315,7 @@ function Joined({ lobby, friends }: { lobby: LobbyState; friends: ReactNode }) {
           Leave
         </Button>
       </Card>
-      <Card title={`Players · ${lobby.members.length}`} icon={UsersIcon}>
+      <Card title={`Players · ${lobby.members.length}`}>
         {lobby.members.map((m) => {
           const hidden = prefs.hiddenPlayers.includes(m.id);
           return (

@@ -1,8 +1,7 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Clock, Gift, Loader2, PawPrint, Smile } from "lucide-react";
+import { Gift, Loader2, Smile } from "lucide-react";
 import { CHEST_PRICE } from "@/lib/items";
-import type { Prefs } from "@/lib/prefs";
 
 const KEYS = { cosmetic: "TIME_LEFT", emote: "EMOTE_CHEST_TIME_LEFT" };
 const FULL = 1800;
@@ -17,24 +16,19 @@ function load(key: string) {
   }
 }
 
-const mmss = (s: number) =>
-  `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
-
 /**
  * One chest shop bubble with its restock timer. `tokens` is null until the catalog is known.
  * When `gift` changes, another player paid for this chest: it opens for free if it is ready.
  */
 export default function Chest({
-  kind, tokens, score, prefs, onWon, onReady, gift, style,
+  kind, tokens, score, onWon, onReady, gift,
 }: {
   kind: "cosmetic" | "emote";
   tokens: number | null;
   score: number | null;
-  prefs: Prefs;
   onWon: (id: number) => void;
   onReady: (ready: boolean) => void;
   gift: number;
-  style: CSSProperties;
 }) {
   const key = KEYS[kind];
   const [t, setT] = useState(() => load(key));
@@ -71,10 +65,8 @@ export default function Chest({
       setT(FULL);
       setReady(false);
       onWon(id);
-      if (prefs.animateChestPurchase) {
-        setFx((n) => n + 1);
-        setTimeout(() => setFx(0), 1200);
-      }
+      setFx((n) => n + 1);
+      setTimeout(() => setFx(0), 1200);
     } catch (e) {
       setT(RETRY);
       setReady(false);
@@ -89,8 +81,7 @@ export default function Chest({
     if (gift && ready && !busy) void open(true);
   }, [gift]);
 
-  const visible = (ready && prefs.showChestPopup) || prefs.alwaysShowChest || fx > 0;
-  if (!visible) return null;
+  if (!ready && !fx && !err) return null;
   const afford = score !== null && score >= CHEST_PRICE;
 
   const click = (e: React.MouseEvent) => {
@@ -105,51 +96,29 @@ export default function Chest({
   };
 
   const emote = kind === "emote";
-  const title = ready && !afford ? `Need ${CHEST_PRICE} taps` : emote ? "Emote chest" : "Cosmetic chest";
+  const title = `${emote ? "Emote chest" : "Chest"}: ${afford ? "open" : "need"} ${CHEST_PRICE} taps`;
+  const Icon = emote ? Smile : Gift;
 
+  // A small pill in the score row; can't afford = dimmed (the price is in the tooltip).
   return (
-    <div className="absolute flex flex-col items-center" style={style} onMouseDown={(e) => e.stopPropagation()}>
-      <button
-        type="button"
-        onClick={click}
-        title={title}
-        className={`relative flex size-11 items-center justify-center rounded-full border-2 border-outline text-foreground shadow-sticker-sm ${
-          emote ? "bg-secondary" : "bg-card"
-        } ${ready && !afford ? "opacity-60 grayscale" : ""} ${shake ? "chest-shake" : ""} ${fx ? "chest-pop" : ""}`}
-      >
-        {busy ? (
-          <Loader2 className="size-5 animate-spin" />
-        ) : ready ? (
-          <Gift className="chest-idle size-6 text-primary" />
-        ) : (
-          <span className="flex flex-col items-center gap-px font-heading text-[10px] leading-none tabular-nums text-muted-foreground">
-            <Clock className="size-3" />
-            {mmss(t)}
-          </span>
-        )}
-        {emote && (
-          <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full border-2 border-outline bg-card">
-            <Smile className="size-2.5" />
-          </span>
-        )}
-        {fx > 0 && (
-          <span className="chest-float pointer-events-none absolute -top-3 font-heading text-xs font-bold text-destructive">
-            -{CHEST_PRICE}
-          </span>
-        )}
-      </button>
-      {ready && !busy && (
-        <span
-          className={`-mt-2 flex items-center gap-0.5 rounded-full border-2 border-outline bg-card px-1.5 font-heading text-[10px] leading-4 tabular-nums ${
-            afford ? "" : "opacity-60 grayscale"
-          }`}
+    <div className="relative" onMouseDown={(e) => e.stopPropagation()}>
+      {(ready || fx > 0) && (
+        <button
+          type="button"
+          onClick={click}
+          title={title}
+          className={`pill flex size-6 items-center justify-center ${afford ? "" : "opacity-50"} ${shake ? "chest-shake" : ""} ${fx ? "chest-pop" : ""}`}
         >
-          {CHEST_PRICE}
-          <PawPrint className="size-2.5 text-primary" />
+          {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Icon className="size-3.5 text-primary" />}
+        </button>
+      )}
+      {fx > 0 && (
+        <span className="chest-float pointer-events-none absolute -top-4 left-1/2 -translate-x-1/2 text-xs font-semibold text-destructive">
+          -{CHEST_PRICE}
         </span>
       )}
       {err && (
-        <p className="mt-0.5 max-w-24 break-words rounded-full border-2 border-destructive bg-card px-1.5 text-center text-[10px] leading-tight text-destructive">
+        <p className="pill absolute top-full left-1/2 z-10 mt-1 w-32 -translate-x-1/2 rounded-xl px-1.5 text-center text-[10px] leading-tight text-destructive">
           {err}
         </p>
       )}

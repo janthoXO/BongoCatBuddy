@@ -48,7 +48,7 @@ export function RemoteCat({
   const live = useRef({ prefs, catalog });
   live.current = { prefs, catalog };
 
-  const L = remoteLayout(prefs.catScale * prefs.remoteCatRatio);
+  const L = remoteLayout(prefs.catScale);
 
   const burst = () => {
     const n = 1 + Math.floor(Math.random() * 3);
@@ -152,7 +152,7 @@ export function RemoteCat({
       {speech && (
         <p
           key={speech.k}
-          className="pointer-events-none absolute left-1/2 top-1 z-20 line-clamp-2 -translate-x-1/2 break-words rounded-xl border-2 border-outline bg-card px-2 py-0.5 text-center font-heading text-xs leading-tight text-foreground shadow-sticker-sm"
+          className="pointer-events-none absolute left-1/2 top-1 z-20 line-clamp-2 -translate-x-1/2 break-words pill rounded-xl px-2 py-0.5 text-center text-xs leading-tight text-foreground"
           style={{ maxWidth: L.w - 8 }}
         >
           {speech.text}
@@ -162,7 +162,7 @@ export function RemoteCat({
       {head && won !== undefined && (
         <div
           key={head.k}
-          className="popup pointer-events-none absolute left-1/2 top-1 z-20 flex items-center gap-2 overflow-hidden rounded-xl border-2 border-outline bg-card py-1 pl-3 pr-3 shadow-sticker"
+          className="popup pointer-events-none absolute left-1/2 top-1 z-20 flex items-center gap-2 pill overflow-hidden rounded-xl py-1 pl-3 pr-3"
           style={{ maxWidth: L.w - 8 }}
         >
           <span
@@ -175,7 +175,7 @@ export function RemoteCat({
               {member.name} got
             </p>
             <p className="flex items-center gap-1 text-xs font-semibold text-foreground">
-              <span className="truncate font-heading">{won?.name ?? `#${head.id}`}</span>
+              <span className="truncate">{won?.name ?? `#${head.id}`}</span>
               {won?.quality && (
                 <span className="size-2 shrink-0 rounded-full" style={{ background: QUALITY_COLORS[won.quality] }} />
               )}
@@ -231,18 +231,11 @@ export function RemoteCat({
                 title={`Open ${member.name}'s chest for ${CHEST_PRICE} taps`}
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => void gift(e, kind)}
-                className={`pointer-events-auto relative flex size-8 items-center justify-center rounded-full border-2 border-outline text-foreground shadow-sticker-sm ${
-                  kind === "emote" ? "bg-secondary" : "bg-card"
-                }`}
+                className="pill pointer-events-auto relative flex size-6 items-center justify-center"
               >
-                <Gift className="chest-idle size-4 text-primary" />
-                {kind === "emote" && (
-                  <span className="absolute -right-1 -top-1 flex size-3.5 items-center justify-center rounded-full border-2 border-outline bg-card">
-                    <Smile className="size-2" />
-                  </span>
-                )}
+                {kind === "emote" ? <Smile className="size-3.5 text-primary" /> : <Gift className="size-3.5 text-primary" />}
                 {fx === kind && (
-                  <span className="chest-float pointer-events-none absolute -top-3 font-heading text-xs font-bold text-destructive">
+                  <span className="chest-float pointer-events-none absolute -top-3 text-xs font-semibold text-destructive">
                     -{CHEST_PRICE}
                   </span>
                 )}
@@ -251,8 +244,8 @@ export function RemoteCat({
           )}
           <span
             data-solid
-            className={`max-w-28 truncate rounded-full border-2 border-outline bg-card px-2 font-heading text-xs font-semibold leading-5 text-foreground shadow-sticker-sm ${
-              prefs.showPlayerNames || hovered ? "" : "opacity-0"
+            className={`pill max-w-28 truncate px-2 text-xs font-medium leading-6 ${
+              hovered ? "" : "opacity-0"
             }`}
           >
             {member.name}
@@ -260,7 +253,7 @@ export function RemoteCat({
         </div>
         {err && (
           <p
-            className="truncate rounded-full border-2 border-destructive bg-card px-2 text-center text-[10px] leading-4 text-destructive"
+            className="pill truncate px-2 text-center text-[10px] leading-4 text-destructive"
             style={{ maxWidth: L.w - 8 }}
           >
             {err}

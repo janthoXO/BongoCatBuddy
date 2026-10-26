@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Tauri 2 desktop app: a Bongo Cat overlay that talks to the real Bongo Cat Steam game (app 3419430). Rust owns Steam, input and windows; React draws the cats. **Read `README_DEV.md` before you make non-trivial changes.** It covers the architecture, the overlay and click-through design, the multiplayer protocol, and CI.
+Tauri 2 desktop app: a clean, minimal alternative client for the Bongo Cat Steam game (app 3419430). It runs as the game on Steam and is wire-compatible with it, but it is not gamified: system look, light/dark from the OS, a tray-panel menu, and few settings. Rust owns Steam, input and windows; React draws the cats. **Read `README_DEV.md` before you make non-trivial changes.** It covers the architecture, the overlay and click-through design, the multiplayer protocol, and CI.
 
 ## Commands
 
@@ -19,7 +19,7 @@ There is no lint script and no frontend test suite. Version lives in `package.js
 
 ## Architecture in brief
 
-- Two windows, one frontend bundle: `src/main.tsx` routes by window label (`menu` goes to `src/menu/Menu.tsx`, anything else to `src/overlay/Overlay.tsx`).
+- Two windows, one frontend bundle: `src/main.tsx` routes by window label (`menu` goes to `src/menu/Menu.tsx`, anything else to `src/overlay/Overlay.tsx`). `menu` is a 380×600 tray panel that hides on blur (`show_menu` in `lib.rs`).
 - `src-tauri/src/lib.rs` holds the Tauri commands, tray, global input (rdev), click-through hit testing, and the main loop (Steam callbacks, taps to stats, lobby tick). The other modules are `lobby.rs` (Steam lobbies), `inventory.rs` (blocking ISteamInventory wrapper, since the steamworks crate lacks it), `art.rs` (copies sprites from the local game install) and `devdriver.rs`.
 - Prefs live in localStorage (`src/lib/prefs.ts`) and are broadcast to all windows through the `prefs` event.
 - The multiplayer protocol (lobby keys, chat channels, base59 lobby codes) must stay wire-compatible with the real game. Keep `lobby.rs` and `src/lib/lobby.ts` in sync, and see the tables in README_DEV.md.
@@ -36,5 +36,6 @@ There is no lint script and no frontend test suite. Version lives in `package.js
 ## Conventions
 
 - `src/components/ui/` is shadcn-generated (`components.json`).
+- Keep it minimal. Theme tokens live in `src/index.css`, and overlay chrome uses the `pill` utility. No new fonts or ornamental animation. Prefer a direct interaction or a sensible default over a new setting.
 - One branch per milestone, with stacked PRs via `gh stack`.
 - Commit messages are written in caveman voice (see `git log`).

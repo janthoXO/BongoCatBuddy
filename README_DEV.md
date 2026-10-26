@@ -1,5 +1,7 @@
 # Development
 
+Direction: a clean, minimal alternative client for the game, not a second gamified one. It keeps the important features, stays wire-compatible, and stays light. New features go through that filter (see "Look").
+
 Rust own Steam. React draw cat. Tauri glue.
 
 ## Setup
@@ -33,7 +35,7 @@ Version lives in `package.json`; `tauri.conf.json` reads it.
 `src/`
 - `main.tsx` - routes by window label: `menu` -> `Menu`, else `Overlay`.
 - `overlay/` - `Overlay.tsx`, `RemoteCat.tsx`, `Chest.tsx`. Transparent cat window.
-- `menu/` - `Menu.tsx` tabs: `Inventory`, `Crafting`, `Lobby`, `Settings`.
+- `menu/` - `Menu.tsx` tabs: `Inventory`, `Crafting`, `Lobby`, `Settings`. Window `menu` is a tray panel (380x600, no decorations), see below.
 - `lib/` - `prefs.ts` (settings, saved in localStorage, broadcast to all windows by "prefs" event), `lobby.ts` (protocol, channels), `items.ts`.
 - `components/` - `CatFigure.tsx`, `EmoteParticle.tsx`, `ui/` (shadcn).
 
@@ -44,6 +46,14 @@ Version lives in `package.json`; `tauri.conf.json` reads it.
 - `tauri.conf.json` bundles it into macOS app: `Contents/MacOS/libsteam_api.dylib`.
 - `tauri.windows.conf.json` bundles `steam_api64.dll` next to the exe.
 - Main loop pumps Steam callbacks and lobby tick. Stats uploaded about once a minute like the game.
+
+## Look
+
+Minimal, system-like, not gamified. Tokens in `src/index.css`: system font, neutral grays, system blue. Light/dark follows the OS (`prefers-color-scheme`; the `dark:` variant is that media query, no class). Overlay chrome (score, name tags, bubbles, small buttons) uses the `pill` utility. Settings stay few: what can be a direct interaction is one (click cat = score bar, right-click = menu, emote bar only when emotes are picked, chests only when ready). Menu is a narrow tray panel, so UI must fit 380 px wide..
+
+## Menu panel
+
+`show_menu` in `lib.rs`. Left click on tray icon toggles the panel, hung below the icon (above it when the tray sits in the bottom half, like Windows taskbar). Right click on tray = Open menu / Quit. Right click on a cat (`open_menu`) opens it too. Hides on blur and on Escape. A tray click blurs the open panel first, so a click within 300 ms of that blur does not reopen it (`PANEL_HID`).
 
 ## Overlay and input
 
