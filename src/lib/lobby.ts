@@ -86,29 +86,28 @@ export const remoteLayout = (scale: number) => {
 };
 
 /**
- * Members in the player's order. The ones in `order` (moved in the Lobby tab) fill the spots they
- * hold in Steam's order, sorted as in `order`; everyone else keeps their spot.
+ * Members in the player's order: the tracked ones (`order`, set by dragging in the Lobby tab)
+ * first, in that order, then everyone else in Steam's order.
  */
 export function ordered<T extends { id: string }>(members: T[], order: string[]): T[] {
   const rank = new Map(order.map((id, i) => [id, i]));
-  const moved = members.filter((m) => rank.has(m.id)).sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
-  let k = 0;
-  return members.map((m) => (rank.has(m.id) ? moved[k++] : m));
+  const tracked = members.filter((m) => rank.has(m.id)).sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
+  return [...tracked, ...members.filter((m) => !rank.has(m.id))];
 }
 
 /**
  * The new `order` after `id` is dragged to index `to` in `shown` (ids as `ordered` lists them).
- * Saved: the dragged cat, the ones it passed, the ones moved before and every cat between them.
- * Saved players not here now keep their place after the one before them.
+ * The dragged player gets tracked, and so does every untracked one between the tracked ones and
+ * its new spot (tracked stay on top); the ones it passed below that stay untracked. Tracked
+ * players not here now keep their place after the one before them.
  */
 export function moveCat(shown: string[], order: string[], id: string, to: number): string[] {
   const i = shown.indexOf(id);
-  if (i < 0 || to === i) return order;
+  if (i < 0) return order;
+  const count = shown.filter((m) => order.includes(m)).length + (order.includes(id) ? 0 : 1);
   const next = shown.filter((m) => m !== id);
   next.splice(to, 0, id);
-  const keep = new Set([...order, ...next.slice(Math.min(i, to), Math.max(i, to) + 1)]);
-  const at = next.flatMap((m, k) => (keep.has(m) ? [k] : []));
-  const out = next.slice(at[0], at[at.length - 1] + 1);
+  const out = next.slice(0, Math.max(to + 1, count));
   order.forEach((m, k) => {
     if (!out.includes(m)) out.splice(k ? out.indexOf(order[k - 1]) + 1 : 0, 0, m);
   });
