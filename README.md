@@ -18,7 +18,7 @@ It is a lightweight Tauri app (Rust and the system web view), not a game engine.
 
 ## Features
 
-- **Desktop pet overlay.** A transparent, always-on-top cat that taps with every global key press and mouse click, in any app. Click a cat to show or hide your score or that player's name, right-click it for the menu. Cat size, flip, screen choice and whether mouse clicks count are configurable.
+- **Desktop pet overlay.** A transparent, always-on-top cat that taps with every global key press and mouse click, in any app. Click the cat to always show your score or only on hover, right-click it for the menu. Cat size, flip, screen choice and whether mouse clicks count are configurable.
 - **Tray menu.** Click the tray (menu bar) icon for a small panel with your items, crafting, lobbies and settings. It closes when you click elsewhere.
 - **Real Steam progress.** The app talks to Steam directly through the Steamworks API, so taps, score and stats count for your Steam account in the real game.
 - **Inventory, chests and crafting.** Browse your hats, skins and emotes with a live preview on your cat. When a cosmetic or emote chest is ready, it appears next to your score (1000 taps each). Craft new items from duplicates.

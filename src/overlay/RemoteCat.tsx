@@ -14,8 +14,7 @@ export function RemoteCat({
   member,
   catalog,
   prefs,
-  showName,
-  onToggleName,
+  hovered,
   chestsRight,
   x,
   y,
@@ -24,9 +23,8 @@ export function RemoteCat({
   member: Member;
   catalog: Map<number, Item> | null;
   prefs: Prefs;
-  /** name tag shown; without it the chests hang off the middle */
-  showName: boolean;
-  onToggleName: () => void;
+  /** the mouse is over this cat's box (CSS :hover is unreliable in the click-through overlay) */
+  hovered: boolean;
   /** chests hang off the name tag's right end (more screen room there), else its left */
   chestsRight: boolean;
   /** box position in px inside the overlay */
@@ -195,7 +193,6 @@ export function RemoteCat({
         onPointerDown={drag?.onPointerDown}
         onClick={() => {
           if (drag?.wasDragged()) return;
-          onToggleName();
           doSquish();
           burst();
           void lobbySend(CH.pat, id);
@@ -251,11 +248,14 @@ export function RemoteCat({
               ) : null,
             )}
           </div>
-          {showName && (
-            <span data-solid className="pill max-w-28 truncate px-2 text-xs font-medium leading-6">
-              {member.name}
-            </span>
-          )}
+          <span
+            data-solid
+            className={`pill max-w-28 truncate px-2 text-xs font-medium leading-6 ${
+              hovered ? "" : "opacity-0"
+            }`}
+          >
+            {member.name}
+          </span>
         </div>
         {err && (
           <p
