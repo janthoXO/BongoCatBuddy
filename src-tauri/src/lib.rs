@@ -1,6 +1,7 @@
 mod art;
 #[cfg(debug_assertions)]
 mod devdriver;
+mod gameprefs;
 mod inventory;
 mod lobby;
 
@@ -89,6 +90,8 @@ struct Shared {
     /// Set once Steam is up, which can be a while after start (see connect_steam).
     steam: OnceLock<Client>,
     art: OnceLock<PathBuf>,
+    /// Steam says the game is installed: we share its outfit (see gameprefs).
+    game_installed: AtomicBool,
     stats: Mutex<Option<Stats>>,
     notice: Mutex<Option<String>>,
     catalog: Mutex<Option<Vec<ItemDef>>>,
@@ -125,6 +128,23 @@ fn get_catalog(state: Sh) -> Option<Vec<ItemDef>> {
 #[tauri::command]
 fn get_inventory(state: Sh) -> Option<Vec<Owned>> {
     state.stacks.lock().unwrap().as_deref().map(owned)
+}
+
+/// The game's (hat, skin), -1 = none; None when it has none stored. Err: game not installed.
+#[tauri::command]
+async fn game_outfit(state: Sh<'_>) -> Result<Option<(i64, i64)>, String> {
+    if !state.game_installed.load(Ordering::Relaxed) {
+        return Err("game not installed".into());
+    }
+    Ok(gameprefs::outfit())
+}
+
+#[tauri::command]
+async fn set_game_outfit(state: Sh<'_>, hat: i64, skin: i64) -> Result<(), String> {
+    if !state.game_installed.load(Ordering::Relaxed) {
+        return Err("game not installed".into());
+    }
+    gameprefs::set_outfit(hat, skin).inspect_err(|e| log::warn!("game outfit not saved: {e}"))
 }
 
 #[tauri::command]
@@ -588,6 +608,7 @@ fn connect_steam(app: &AppHandle, sh: &Shared) {
         notify(app, sh, None);
     }
     let install = client.apps().app_install_dir(AppId(APP_ID));
+    sh.game_installed.store(client.apps().is_app_installed(AppId(APP_ID)), Ordering::Relaxed);
     // ponytail: a window that already asked for art keeps the placeholder until restart
     if sh.art.get().is_none()
         && let Ok(data) = app.path().app_data_dir()
@@ -685,6 +706,8 @@ pub fn run() {
             get_catalog,
             get_inventory,
             set_ignore_mouse,
+            game_outfit,
+            set_game_outfit,
             set_hit_rects,
             fetch_art,
             open_menu,

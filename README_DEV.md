@@ -30,6 +30,7 @@ Version lives in `package.json`; `tauri.conf.json` reads it.
 - `lobby.rs` - Steam lobbies, wired like the game so both clients see each other.
 - `inventory.rs` - blocking wrapper around ISteamInventory (not in steamworks crate).
 - `art.rs` - copies cat sprites out of the local game install.
+- `gameprefs.rs` - the game's own Unity PlayerPrefs, for the shared outfit (see Steam).
 - `devdriver.rs` - debug-only remote control.
 
 `src/`
@@ -45,6 +46,7 @@ Version lives in `package.json`; `tauri.conf.json` reads it.
 - `build.rs` copies Steam runtime lib (`libsteam_api.dylib` / `steam_api64.dll`; `libsteam_api.so` on Linux) from `steamworks-sys` crate sources (version from `Cargo.lock`) into `target/<profile>/`, next to the binary.
 - `tauri.conf.json` bundles it into macOS app: `Contents/MacOS/libsteam_api.dylib`.
 - `tauri.windows.conf.json` bundles `steam_api64.dll` next to the exe.
+- Outfit shared with the game: its Unity PlayerPrefs `EQUIPPED_ITEMS_3`, `[hat,skin]` repeated (3 pairs), -1 none. macOS via `defaults` (domain `com.Irox-Games.BongoCat`, never the plist file, cfprefsd caches). Windows `HKCU\Software\Irox Games\BongoCat`, value `EQUIPPED_ITEMS_3_h<djb2-xor hash>`, REG_BINARY UTF-8 + 0, via `reg.exe` (untested). Only when Steam says the game is installed, checked each start. Start: game's value changed since last sync (`gameOutfit` pref) = worn in game meanwhile, we take it; else game gets ours. Game and Buddy can't run at once (see Joining from Steam), so no live conflict.
 - Main loop pumps Steam callbacks and lobby tick. Stats uploaded about once a minute like the game.
 
 ## Logs
