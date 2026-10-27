@@ -740,7 +740,7 @@ export default function Overlay() {
           )}
           {notice && (
             <p
-              className="pill max-w-full truncate px-2 text-center text-[10px] leading-4 text-muted-foreground"
+              className="pill max-w-full text-balance rounded-lg px-2 text-center text-[10px] leading-4 text-muted-foreground"
               style={{ maxWidth: L.w - 8 }}
             >
               {notice}

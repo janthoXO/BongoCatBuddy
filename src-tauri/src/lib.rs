@@ -744,23 +744,25 @@ pub fn run() {
 
 /// A stale grant (ad-hoc signed app updated, e.g. by brew) still shows as allowed in Settings, but
 /// the event tap then gets nothing and `listen` doesn't fail, so ask macOS up front. macOS only
-/// prompts when it has no entry for the app at all, so otherwise open the Input Monitoring pane.
+/// prompts when it has no entry for the app, so drop ours first (works without admin).
 #[cfg(target_os = "macos")]
-fn listen_allowed() -> bool {
+fn listen_allowed(app: &AppHandle) -> bool {
     #[link(name = "CoreGraphics", kind = "framework")]
     unsafe extern "C" {
         fn CGPreflightListenEventAccess() -> bool;
         fn CGRequestListenEventAccess() -> bool;
     }
-    let ok = unsafe { CGPreflightListenEventAccess() || CGRequestListenEventAccess() };
-    if !ok {
-        let _ = open_with_os("x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent".as_ref());
+    if unsafe { CGPreflightListenEventAccess() } {
+        return true;
     }
-    ok
+    let _ = std::process::Command::new("tccutil")
+        .args(["reset", "ListenEvent", &app.config().identifier])
+        .status();
+    unsafe { CGRequestListenEventAccess() }
 }
 
 #[cfg(not(target_os = "macos"))]
-fn listen_allowed() -> bool {
+fn listen_allowed(_: &AppHandle) -> bool {
     true
 }
 
@@ -771,7 +773,7 @@ fn spawn_input(app: AppHandle, shared: Arc<Shared>, taps: Arc<AtomicU32>) {
         let mut held = HashSet::new();
         let sh = shared.clone();
         let hook_app = app.clone();
-        let err = if !listen_allowed() {
+        let err = if !listen_allowed(&app) {
             Some("no permission".to_string())
         } else {
             listen(move |e| match e.event_type {
@@ -800,7 +802,7 @@ fn spawn_input(app: AppHandle, shared: Arc<Shared>, taps: Arc<AtomicU32>) {
             notify(
                 &app,
                 &shared,
-                Some(format!("Can't read keys ({e}). Allow Input Monitoring (already on? remove it with − and add the app again), then restart.")),
+                Some(format!("Can't read keys ({e}). Allow it in Input Monitoring, then restart.")),
             );
             // No global mouse events either: poll the cursor, slower, so the cats stay clickable.
             loop {
