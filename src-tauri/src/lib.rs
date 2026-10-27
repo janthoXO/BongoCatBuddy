@@ -548,11 +548,19 @@ fn open_with_os(target: &std::ffi::OsStr) -> std::io::Result<std::process::Child
     std::process::Command::new(cmd).arg(target).spawn()
 }
 
-/// Shows the log folder, so users can attach the log to a bug report.
+/// Shows the log file in Finder / Explorer, so users can attach it to a bug report. Revealed, not
+/// its folder opened: macOS takes the folder (`com.bongocatbuddy.app`) for an app bundle.
 #[tauri::command]
 fn open_logs(app: AppHandle) -> Result<(), String> {
     let dir = app.path().app_log_dir().map_err(|e| e.to_string())?;
-    open_with_os(dir.as_os_str()).map(|_| ()).map_err(|e| e.to_string())
+    let file = dir.join(format!("{}.log", app.package_info().name));
+    #[cfg(target_os = "macos")]
+    let r = std::process::Command::new("open").arg("-R").arg(&file).spawn();
+    #[cfg(windows)]
+    let r = std::process::Command::new("explorer").arg(format!("/select,{}", file.display())).spawn();
+    #[cfg(not(any(target_os = "macos", windows)))]
+    let r = open_with_os(dir.as_os_str());
+    r.map(|_| ()).map_err(|e| e.to_string())
 }
 
 /// Connects to Steam, starting it through the steam:// handler if it isn't running.

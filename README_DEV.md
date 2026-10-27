@@ -49,7 +49,7 @@ Version lives in `package.json`; `tauri.conf.json` reads it.
 
 ## Logs
 
-- `tauri-plugin-log`, Info level, 1 MB, keeps one old file. Goes to the OS log dir (`~/Library/Logs/com.bongocatbuddy.app/`, Windows `%LOCALAPPDATA%\com.bongocatbuddy.app\logs`) and stdout. Panics and every failed `blocking` command are logged. Settings > "Show log file" opens the folder.
+- `tauri-plugin-log`, Info level, 1 MB, keeps one old file. Goes to the OS log dir (`~/Library/Logs/com.bongocatbuddy.app/`, Windows `%LOCALAPPDATA%\com.bongocatbuddy.app\logs`) and stdout. Panics and every failed `blocking` command are logged. Settings > "Show log file" reveals the file (`open -R` / `explorer /select`): opening the folder fails on macOS, it ends in `.app` so it counts as an app bundle.
 
 ## Look
 
