@@ -41,6 +41,7 @@
     "targets": "all",
     "macOS": {
       "signingIdentity": "-",
+      "hardenedRuntime": false,
       "files": {
         "MacOS/libsteam_api.dylib": "target/release/libsteam_api.dylib"
       }
