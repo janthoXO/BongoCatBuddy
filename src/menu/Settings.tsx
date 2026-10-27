@@ -116,7 +116,7 @@ export function Settings() {
           {prefs.randomOutfit > 0 && <Toggle label="Only favorites" checked={prefs.randomFavorites} onChange={set("randomFavorites")} />}
         </Section>
 
-        <Section title="Multiplayer">
+        <Section title="Multiplayer" footer="Drag players in the Lobby tab to set their order.">
           <Choice
             label="Layout"
             value={prefs.catLayout}
