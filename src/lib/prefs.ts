@@ -41,7 +41,11 @@ export type Prefs = {
   myPos?: [number, number];
   /** free layout: other cats' boxes by steam id */
   catPos: Record<string, [number, number]>;
+  /** steam ids moved in the Lobby tab, in the player's order (see `ordered` in lobby.ts) */
+  catOrder: string[];
   equipped: Partial<Record<"hat" | "skin", number>>;
+  /** (hat, skin) in the game's own prefs when we last synced them, -1 = none */
+  gameOutfit?: [number, number];
   /** emote/consumable ids shown in the emote wheel */
   emotes: number[];
   favorites: number[];
@@ -71,6 +75,7 @@ const DEFAULTS: Prefs = {
   muteChats: false,
   hiddenPlayers: [],
   catPos: {},
+  catOrder: [],
   equipped: {},
   emotes: [],
   favorites: [],

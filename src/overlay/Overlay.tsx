@@ -3,13 +3,13 @@ import { availableMonitors, getCurrentWindow, primaryMonitor } from "@tauri-apps
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { Heart, Menu, MessageCircle, PawPrint } from "lucide-react";
 import { useItems, CHEST_TOKEN, EMOTE_CHEST_TOKEN, iconUrl, QUALITY_COLORS, type Item } from "@/lib/items";
-import { MAX_WHEEL_EMOTES, usePrefs } from "@/lib/prefs";
+import { MAX_WHEEL_EMOTES, usePrefs, type Prefs } from "@/lib/prefs";
 import Chest from "./Chest";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { CatFigure, FIGURE_H, FIGURE_W } from "@/components/CatFigure";
 import { EmoteParticle } from "@/components/EmoteParticle";
-import { CH, lobbySend, MAX_SPEECH, onLobbyMsg, remoteLayout, useLobby } from "@/lib/lobby";
+import { CH, lobbySend, MAX_SPEECH, onLobbyMsg, ordered, remoteLayout, useLobby } from "@/lib/lobby";
 import { RemoteCat } from "./RemoteCat";
 import { maskOf, onMask } from "@/lib/mask";
 
@@ -235,7 +235,7 @@ export default function Overlay() {
   const shift: Pos = nativeFrom && win ? [win.x - nativeFrom.x, win.y - nativeFrom.y] : [0, 0];
   const me = at("me", [myBase[0] + shift[0], myBase[1] + shift[1]]);
   const others = lobby
-    ? lobby.members.filter((m) => m.id !== lobby.me && !prefs.hiddenPlayers.includes(m.id)).slice(0, prefs.maxCats)
+    ? ordered(lobby.members, prefs.catOrder).filter((m) => m.id !== lobby.me && !prefs.hiddenPlayers.includes(m.id)).slice(0, prefs.maxCats)
     : [];
   // The cat art ends 14 units above the figure's bottom (see remoteLayout). What each box really
   // shows is measured after rendering (`occ`); until then the whole box counts.
@@ -452,6 +452,36 @@ export default function Overlay() {
     }, prefs.randomOutfit * 60_000);
     return () => clearInterval(t);
   }, [prefs.randomOutfit]);
+
+  // The game keeps its outfit in its own prefs; we share it. Once Steam is up (catalog), take the
+  // game's when it changed since we last synced (worn in the game meanwhile), else it gets ours.
+  // Game not installed: Err, ours stays local only. Checked again on every start.
+  const [gameSync, setGameSync] = useState(false);
+  const askedGame = useRef(false);
+  useEffect(() => {
+    if (!catalog || askedGame.current) return;
+    askedGame.current = true;
+    invoke<[number, number] | null>("game_outfit")
+      .then((g) => {
+        const last = outfit.current.prefs.gameOutfit;
+        if (g && !(last && last[0] === g[0] && last[1] === g[1])) {
+          const equipped: Prefs["equipped"] = {};
+          if (g[0] >= 0) equipped.hat = g[0];
+          if (g[1] >= 0) equipped.skin = g[1];
+          update({ equipped, gameOutfit: g });
+        }
+        setGameSync(true);
+      })
+      .catch(() => {});
+  }, [catalog]);
+  const wear: [number, number] = [prefs.equipped.hat ?? -1, prefs.equipped.skin ?? -1];
+  useEffect(() => {
+    const last = prefs.gameOutfit;
+    if (!gameSync || (last && last[0] === wear[0] && last[1] === wear[1])) return;
+    invoke("set_game_outfit", { hat: wear[0], skin: wear[1] })
+      .then(() => update({ gameOutfit: wear }))
+      .catch(() => {});
+  }, [gameSync, ...wear]);
 
   useEffect(() => {
     invoke<Score | null>("get_score").then(setScore).catch(() => {});
