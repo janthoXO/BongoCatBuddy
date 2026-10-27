@@ -258,9 +258,10 @@ export default function Overlay() {
   ];
 
   // The window covers just the cats. Moving its left/top edge makes the cats jump for a frame
-  // or two (the window moves before WebKit repaints), so drags avoid that: when everything
-  // moves together (our cat alone or leading the row) the whole window is dragged natively;
-  // a free-layout drag inside the window first stretches it over the screen once.
+  // or two (the window moves before WebKit repaints), so drags avoid that: our cat alone drags
+  // the whole window natively; with other cats the window first stretches over the screen once
+  // and the drag happens inside it, so a row or column can re-flow live (a native drag keeps the
+  // window's size and would cut off cats that move to the other side).
   const tight = grow(
     placed.reduce((r, o) => union(r, { x: o.at[0], y: o.at[1], w: R.w, h: R.h }), { x: me[0], y: me[1], w: L.w, h: L.h }),
     PAD,
@@ -282,7 +283,7 @@ export default function Overlay() {
   }, [wantKey, screen, nativeFrom]);
   const [ox, oy] = win ? [win.x, win.y] : [want.x, want.y];
 
-  const wholeWindow = !free || placed.length === 0;
+  const wholeWindow = placed.length === 0;
   const startWindowDrag = (e: React.PointerEvent) => {
     if (e.button !== 0 || !win) return;
     setNativeFrom(win);
@@ -313,7 +314,8 @@ export default function Overlay() {
     if (e.button !== 0) return;
     // screen coordinates: the window may move under the pointer while it grows
     const [sx, sy] = [e.screenX, e.screenY];
-    const cats = figs.filter((f) => f.id !== id);
+    // in a row or column the other cats follow ours: only the screen to snap to
+    const cats = free ? figs.filter((f) => f.id !== id) : [];
     // free layout: every cat stays where it is, also the ones still in their first spot (those
     // follow ours), so they are saved once the drag really starts
     const pinned = { ...prefs.catPos, ...Object.fromEntries(placed.map((o) => [o.m.id, o.base])) };
@@ -322,7 +324,7 @@ export default function Overlay() {
     const move = (ev: PointerEvent) => {
       const [dx, dy] = [ev.screenX - sx, ev.screenY - sy];
       if (!last && Math.hypot(dx, dy) < 4) return;
-      if (!last) update({ catPos: pinned });
+      if (!last && free) update({ catPos: pinned });
       const p: Pos = [from[0] + dx, from[1] + dy];
       const [x, y] = ev.altKey ? p : snap(p, w, h, fig, cats, S);
       last = { dx: x - from[0], dy: y - from[1] };

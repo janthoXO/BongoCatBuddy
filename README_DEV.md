@@ -63,10 +63,11 @@ Minimal, system-like, not gamified. Tokens in `src/index.css`: system font, neut
 - Events to frontend: `hover` (id of hovered rect or null; CSS `:hover` cannot see click-through window), `mouse-up` (left release while hovering; page never sees it during native drag).
 - No rdev (macOS permission missing): `spawn_input` polls cursor every 100 ms instead, shows a notice.
 - Drag:
-  - Own cat alone or row/column layout: whole window drags natively (`startDragging`). Position saved on rdev mouse-up.
-  - Free layout: window stretched to screen during drag, then shrunk. Every cat moves on its own. When a drag starts, all other cats' current positions are saved to `catPos` (never-dragged cats would otherwise follow ours, since they sit in their row spot).
+  - Own cat alone: whole window drags natively (`startDragging`). Position saved on rdev mouse-up.
+  - With other cats (any layout): window stretched to screen during drag, then shrunk. Row/column re-flows live while dragging (native drag keeps window size, would clip cats that move to the other side).
+  - Free layout: every cat moves on its own. When a drag starts, all other cats' current positions are saved to `catPos` (never-dragged cats would otherwise follow ours, since they sit in their row spot).
   - Row/column spots (`lineSpots`): other cats line up from ours. A line grows first toward the side of the screen with more room, then from our cat toward the other side. A full line wraps to the next line, also toward more room. Its first cat sits level with ours, then it grows the same way.
-  - Snap (PowerPoint-style, `snap` in `Overlay.tsx`): box onto screen edges/center, cat art onto other cats' edges/centers, within 8 px. Free drags snap live; native drags snap on release (screen only). Alt/Option held = no snap (`mouse-up` payload carries Alt for native drags).
+  - Snap (PowerPoint-style, `snap` in `Overlay.tsx`): box onto screen edges/center, cat art onto other cats' edges/centers, within 8 px. In-window drags snap live (row/column: screen only); native drags snap on release (screen only). Alt/Option held = no snap (`mouse-up` payload carries Alt for native drags).
 - Why: moving window left/top edge while webview repaints makes cats jump 1-2 frames on macOS (measured). Native drag avoids it.
 - Why small window: full-screen transparent window costs graphics memory.
 
