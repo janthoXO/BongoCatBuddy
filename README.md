@@ -38,7 +38,7 @@ brew tap janthoXO/bongocatbuddy https://github.com/janthoXO/BongoCatBuddy
 brew install --cask bongocatbuddy
 ```
 
-The app is unsigned (ad-hoc signed). The cask removes the quarantine flag for you.
+The app is self-signed, not notarized. The cask removes the quarantine flag for you. On first start, allow it in System Settings, Privacy & Security, Input Monitoring (add it with + if it's not listed), then restart it.
 
 Manual install: download `BongoCatBuddy_<version>_aarch64.dmg` from Releases and drag the app to Applications. If macOS blocks it, open System Settings, Privacy & Security, and click **Open Anyway**.
 

@@ -742,28 +742,41 @@ pub fn run() {
         });
 }
 
-/// A stale grant (ad-hoc signed app updated, e.g. by brew) still shows as allowed in Settings, but
-/// the event tap then gets nothing and `listen` doesn't fail, so ask macOS up front. macOS only
-/// prompts when it has no entry for the app, so drop ours first (works without admin).
 #[cfg(target_os = "macos")]
-fn listen_allowed(app: &AppHandle) -> bool {
-    #[link(name = "CoreGraphics", kind = "framework")]
-    unsafe extern "C" {
-        fn CGPreflightListenEventAccess() -> bool;
-        fn CGRequestListenEventAccess() -> bool;
-    }
-    if unsafe { CGPreflightListenEventAccess() } {
-        return true;
-    }
-    let _ = std::process::Command::new("tccutil")
-        .args(["reset", "ListenEvent", &app.config().identifier])
-        .status();
-    unsafe { CGRequestListenEventAccess() }
+#[link(name = "CoreGraphics", kind = "framework")]
+unsafe extern "C" {
+    fn CGPreflightListenEventAccess() -> bool;
+    fn CGRequestListenEventAccess() -> bool;
+}
+
+/// Without this a stale grant (app re-signed with another identity) still shows as allowed in
+/// Settings, but the event tap gets nothing and `listen` doesn't fail.
+#[cfg(target_os = "macos")]
+fn listen_granted() -> bool {
+    unsafe { CGPreflightListenEventAccess() }
+}
+
+/// Prompts only when macOS has no entry for the app yet, and not reliably even then.
+#[cfg(target_os = "macos")]
+fn ask_listen() {
+    unsafe { CGRequestListenEventAccess() };
 }
 
 #[cfg(not(target_os = "macos"))]
-fn listen_allowed(_: &AppHandle) -> bool {
+fn listen_granted() -> bool {
     true
+}
+
+#[cfg(not(target_os = "macos"))]
+fn ask_listen() {}
+
+/// Without global mouse events: poll the cursor, slower, so the cats stay clickable.
+fn poll_cursor(app: &AppHandle, shared: &Shared) {
+    thread::sleep(Duration::from_millis(100));
+    let sf = app.get_webview_window("main").and_then(|w| w.scale_factor().ok());
+    if let (Ok(p), Some(sf)) = (app.cursor_position(), sf) {
+        update_hit(app, &shared.hit, Some((p.x / sf, p.y / sf)));
+    }
 }
 
 /// Counts key and mouse-button presses anywhere on the system. Held keys
@@ -773,44 +786,41 @@ fn spawn_input(app: AppHandle, shared: Arc<Shared>, taps: Arc<AtomicU32>) {
         let mut held = HashSet::new();
         let sh = shared.clone();
         let hook_app = app.clone();
-        let err = if !listen_allowed(&app) {
-            Some("no permission".to_string())
-        } else {
-            listen(move |e| match e.event_type {
-                EventType::KeyPress(k) if held.insert(k) => {
-                    taps.fetch_add(1, Ordering::Relaxed);
-                }
-                EventType::KeyRelease(k) => {
-                    held.remove(&k);
-                }
-                EventType::ButtonPress(_) if !sh.ignore_mouse.load(Ordering::Relaxed) => {
-                    taps.fetch_add(1, Ordering::Relaxed);
-                }
-                // ponytail: rdev reports macOS points, which match logical px; check units if Windows/Linux builds matter
-                EventType::MouseMove { x, y } => update_hit(&hook_app, &sh.hit, Some((x, y))),
-                // ends a native window drag, which the page itself never sees; payload: Alt held (no snapping)
-                EventType::ButtonRelease(Button::Left) if sh.hit.lock().unwrap().hovered.is_some() => {
-                    let alt = held.contains(&Key::Alt) || held.contains(&Key::AltGr);
-                    let _ = hook_app.emit_to("main", "mouse-up", alt);
-                }
-                _ => {}
-            })
-            .err()
-            .map(|e| format!("{e:?}"))
-        };
-        if let Some(e) = err {
+        if !listen_granted() {
+            ask_listen();
+            // macOS caches the answer per process, so only a restart picks up the grant.
+            notify(&app, &shared, Some("Allow BongoCatBuddy in Input Monitoring (add it with +), then restart.".into()));
+            loop {
+                poll_cursor(&app, &shared);
+            }
+        }
+        let result = listen(move |e| match e.event_type {
+            EventType::KeyPress(k) if held.insert(k) => {
+                taps.fetch_add(1, Ordering::Relaxed);
+            }
+            EventType::KeyRelease(k) => {
+                held.remove(&k);
+            }
+            EventType::ButtonPress(_) if !sh.ignore_mouse.load(Ordering::Relaxed) => {
+                taps.fetch_add(1, Ordering::Relaxed);
+            }
+            // ponytail: rdev reports macOS points, which match logical px; check units if Windows/Linux builds matter
+            EventType::MouseMove { x, y } => update_hit(&hook_app, &sh.hit, Some((x, y))),
+            // ends a native window drag, which the page itself never sees; payload: Alt held (no snapping)
+            EventType::ButtonRelease(Button::Left) if sh.hit.lock().unwrap().hovered.is_some() => {
+                let alt = held.contains(&Key::Alt) || held.contains(&Key::AltGr);
+                let _ = hook_app.emit_to("main", "mouse-up", alt);
+            }
+            _ => {}
+        });
+        if let Err(e) = result {
             notify(
                 &app,
                 &shared,
-                Some(format!("Can't read keys ({e}). Allow it in Input Monitoring, then restart.")),
+                Some(format!("Can't read keys ({e:?}). Allow Input Monitoring, then restart.")),
             );
-            // No global mouse events either: poll the cursor, slower, so the cats stay clickable.
             loop {
-                thread::sleep(Duration::from_millis(100));
-                let sf = app.get_webview_window("main").and_then(|w| w.scale_factor().ok());
-                if let (Ok(p), Some(sf)) = (app.cursor_position(), sf) {
-                    update_hit(&app, &shared.hit, Some((p.x / sf, p.y / sf)));
-                }
+                poll_cursor(&app, &shared);
             }
         }
     });

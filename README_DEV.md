@@ -67,7 +67,7 @@ Minimal, system-like, not gamified. Tokens in `src/index.css`: system font, neut
 - Click-through by default (`set_ignore_cursor_events`). Rust gets global mouse moves from rdev. Frontend reports with `set_hit_rects`: `[data-hit]` boxes (hover, ours first) and `solid` rects (`hold` = true while dragging). `update_hit` turns click-through off only when cursor is over a solid rect.
 - Solid = opaque pixels of each cat sprite + buttons/inputs. `src/lib/mask.ts`: sprite drawn to 32x32 canvas, alpha cells merged to rects, LRU cache of 64 masks, fetched on demand. Item CDN has no CORS, so Rust `fetch_art` (ureq, CDN urls only) gives the bytes. Mask not ready or unreadable = whole sprite square.
 - Events to frontend: `hover` (id of hovered rect or null; CSS `:hover` cannot see click-through window), `mouse-up` (left release while hovering; page never sees it during native drag).
-- No rdev (macOS permission missing): `spawn_input` polls cursor every 100 ms instead, shows a notice.
+- No rdev (macOS Input Monitoring missing): `spawn_input` polls cursor every 100 ms instead, shows a notice. Checked up front with `CGPreflightListenEventAccess`: a stale grant still shows as on in Settings, but the event tap gets nothing and rdev doesn't fail. macOS caches the answer per process, so a grant needs a restart. The prompt (`CGRequestListenEventAccess`) only shows when macOS has no entry yet, and not reliably, so the notice says to add the app with +.
 - Drag:
   - Own cat alone: whole window drags natively (`startDragging`). Position saved on rdev mouse-up.
   - With other cats (any layout): window stretched to screen during drag, then shrunk. Row/column re-flows live while dragging (native drag keeps window size, would clip cats that move to the other side).
@@ -149,6 +149,7 @@ Workflows in `.github/workflows/`:
 - `build.yml` - on PRs: typecheck + build frontend, `cargo test`.
 - `package.yml` - on PRs touching `src-tauri/` (any base, so stacked PRs get checked too), and reusable (`workflow_call`, input `version`). `tauri build` on `macos-latest` (arm64 -> dmg) and `windows-latest` (NSIS setup exe). Uploaded as artifacts.
 - `release.yml` - on push of tag `v*` or push to `main`. Version = tag, else latest release with patch + 1 (`.github/actions/determine-version`). Then package, GitHub Release with generated notes, then update `Casks/bongocatbuddy.rb` (version + sha256) on `main`.
+- macOS signing: self-signed cert `BongoCatBuddy` (secrets `MACOS_CERT_P12` base64 + `MACOS_CERT_PASSWORD`), imported into a temp keychain in `package.yml`. Not notarized. Point: macOS ties Input Monitoring to the signing cert, not the build hash (ad-hoc), so the grant survives updates. Lose or replace the cert = every user grants again once. No secret = ad-hoc.
 
 ## Conventions
 

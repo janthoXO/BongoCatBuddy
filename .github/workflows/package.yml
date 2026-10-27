@@ -56,6 +56,25 @@ jobs:
         with:
           workspaces: src-tauri
 
+      # Same self-signed cert every release, so macOS keeps Input Monitoring across updates
+      # (ad-hoc signing ties it to the build hash). No secret (fork PRs): stays ad-hoc.
+      - name: Import signing cert
+        if: runner.os == 'macOS'
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          [ -n "$MACOS_CERT_P12" ] || exit 0
+          KC="$RUNNER_TEMP/sign.keychain-db"
+          echo "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p ci "$KC"
+          security set-keychain-settings "$KC"
+          security unlock-keychain -p ci "$KC"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KC" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci "$KC"
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          echo "APPLE_SIGNING_IDENTITY=BongoCatBuddy" >> "$GITHUB_ENV"
+
       - name: Build app
         run: pnpm tauri build --bundles ${{ matrix.bundle }}
 
