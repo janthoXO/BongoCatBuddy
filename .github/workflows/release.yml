@@ -68,6 +68,8 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: main
+          # deploy key is ruleset bypass actor, GITHUB_TOKEN cannot be
+          ssh-key: ${{ secrets.CASK_DEPLOY_KEY }}
 
       - name: Download dmg
         uses: actions/download-artifact@v8
