@@ -3,21 +3,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { Gift, Loader2, Smile } from "lucide-react";
 import { CHEST_PRICE } from "@/lib/items";
 
-const KEYS = { cosmetic: "TIME_LEFT", emote: "EMOTE_CHEST_TIME_LEFT" };
-const FULL = 1800;
-const RETRY = 60;
-
-function load(key: string) {
-  try {
-    const n = Number(localStorage.getItem(key));
-    return n > 0 ? Math.min(n, FULL) : FULL;
-  } catch {
-    return FULL;
-  }
-}
-
 /**
- * One chest shop bubble with its restock timer. `tokens` is null until the catalog is known.
+ * One chest shop bubble, shown while the player has a token of that kind (`tokens` is null until
+ * the catalog is known).
  * When `gift` changes, another player paid for this chest: it opens for free if it is ready.
  */
 export default function Chest({
@@ -30,29 +18,11 @@ export default function Chest({
   onReady: (ready: boolean) => void;
   gift: number;
 }) {
-  const key = KEYS[kind];
-  const [t, setT] = useState(() => load(key));
-  const [ready, setReady] = useState(false);
+  const ready = (tokens ?? 0) > 0;
   const [busy, setBusy] = useState(false);
   const [shake, setShake] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [fx, setFx] = useState(0); // >0 while the purchase animation plays
-
-  useEffect(() => {
-    if (ready || tokens === null) return;
-    try {
-      localStorage.setItem(key, String(t));
-    } catch {
-      // storage unavailable
-    }
-    if (t <= 0) {
-      if (tokens > 0) setReady(true);
-      else setT(RETRY);
-      return;
-    }
-    const id = setTimeout(() => setT((v) => v - 1), 1000);
-    return () => clearTimeout(id);
-  }, [t, ready, tokens, key]);
 
   useEffect(() => {
     onReady(ready && !busy);
@@ -62,14 +32,10 @@ export default function Chest({
     setBusy(true);
     try {
       const id = await invoke<number>("open_chest", { kind, gift });
-      setT(FULL);
-      setReady(false);
       onWon(id);
       setFx((n) => n + 1);
       setTimeout(() => setFx(0), 1200);
     } catch (e) {
-      setT(RETRY);
-      setReady(false);
       setErr(String(e));
       setTimeout(() => setErr(null), 3000);
     } finally {

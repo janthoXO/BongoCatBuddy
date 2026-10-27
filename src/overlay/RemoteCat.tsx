@@ -15,6 +15,7 @@ export function RemoteCat({
   catalog,
   prefs,
   hovered,
+  chestsRight,
   x,
   y,
   drag,
@@ -24,6 +25,8 @@ export function RemoteCat({
   prefs: Prefs;
   /** the mouse is over this cat's box (CSS :hover is unreliable in the click-through overlay) */
   hovered: boolean;
+  /** chests hang off the name tag's right end (more screen room there), else its left */
+  chestsRight: boolean;
   /** box position in px inside the overlay */
   x: number;
   y: number;
@@ -222,26 +225,29 @@ export function RemoteCat({
         className="pointer-events-none absolute left-0 z-10 flex flex-col items-center gap-0.5"
         style={{ top: L.top + L.figH - 14 * L.u, width: L.w }}
       >
-        <div className="flex items-center gap-1">
-          {chests.map(([kind, ready]) =>
-            ready && (!hidden[kind] || fx === kind) ? (
-              <button
-                key={kind}
-                type="button"
-                title={`Open ${member.name}'s chest for ${CHEST_PRICE} taps`}
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => void gift(e, kind)}
-                className="pill pointer-events-auto relative flex size-6 items-center justify-center"
-              >
-                {kind === "emote" ? <Smile className="size-3.5 text-primary" /> : <Gift className="size-3.5 text-primary" />}
-                {fx === kind && (
-                  <span className="chest-float pointer-events-none absolute -top-3 text-xs font-semibold text-destructive">
-                    -{CHEST_PRICE}
-                  </span>
-                )}
-              </button>
-            ) : null,
-          )}
+        {/* name tag centered, chests hang off it toward more screen room (like ours) */}
+        <div className="relative flex items-center">
+          <div className={`absolute top-0 flex gap-1 ${chestsRight ? "left-full ml-1" : "right-full mr-1"}`}>
+            {chests.map(([kind, ready]) =>
+              ready && (!hidden[kind] || fx === kind) ? (
+                <button
+                  key={kind}
+                  type="button"
+                  title={`Open ${member.name}'s chest for ${CHEST_PRICE} taps`}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => void gift(e, kind)}
+                  className="pill pointer-events-auto relative flex size-6 items-center justify-center"
+                >
+                  {kind === "emote" ? <Smile className="size-3.5 text-primary" /> : <Gift className="size-3.5 text-primary" />}
+                  {fx === kind && (
+                    <span className="chest-float pointer-events-none absolute -top-3 text-xs font-semibold text-destructive">
+                      -{CHEST_PRICE}
+                    </span>
+                  )}
+                </button>
+              ) : null,
+            )}
+          </div>
           <span
             data-solid
             className={`pill max-w-28 truncate px-2 text-xs font-medium leading-6 ${
