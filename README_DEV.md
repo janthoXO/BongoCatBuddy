@@ -64,7 +64,8 @@ Minimal, system-like, not gamified. Tokens in `src/index.css`: system font, neut
 - No rdev (macOS permission missing): `spawn_input` polls cursor every 100 ms instead, shows a notice.
 - Drag:
   - Own cat alone or row/column layout: whole window drags natively (`startDragging`). Position saved on rdev mouse-up.
-  - Free layout: window stretched to screen during drag, then shrunk.
+  - Free layout: window stretched to screen during drag, then shrunk. Every cat moves on its own. When a drag starts, all other cats' current positions are saved to `catPos` (never-dragged cats would otherwise follow ours, since they sit in their row spot).
+  - Row/column spots (`lineSpots`): other cats line up from ours. A line grows first toward the side of the screen with more room, then from our cat toward the other side. A full line wraps to the next line, also toward more room. Its first cat sits level with ours, then it grows the same way.
   - Snap (PowerPoint-style, `snap` in `Overlay.tsx`): box onto screen edges/center, cat art onto other cats' edges/centers, within 8 px. Free drags snap live; native drags snap on release (screen only). Alt/Option held = no snap (`mouse-up` payload carries Alt for native drags).
 - Why: moving window left/top edge while webview repaints makes cats jump 1-2 frames on macOS (measured). Native drag avoids it.
 - Why small window: full-screen transparent window costs graphics memory.

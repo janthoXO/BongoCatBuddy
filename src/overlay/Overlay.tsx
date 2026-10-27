@@ -72,11 +72,12 @@ function snap(p: Pos, w: number, h: number, fig: Rect, cats: Rect[], S: Rect & {
 const GAP = 6; // px between what neighbouring cats show
 
 /**
- * Spots (box positions) for other cats lined up from ours toward the side of the screen with more
- * room, `GAP` apart by what each cat really shows: `occ[i]` (and `meOcc`) is that part inside its
- * box (sprites and bars, see `occupied`). A row runs along x with feet level with ours (`meFeet`,
- * and `feet` px down inside a box), a column along y with box centers aligned. A full line wraps
- * to the next one, also toward more room, the widest/tallest cat apart.
+ * Spots (box positions) for other cats lined up from ours, `GAP` apart by what each cat really
+ * shows: `occ[i]` (and `meOcc`) is that part inside its box (sprites and bars, see `occupied`). A
+ * row runs along x with feet level with ours (`meFeet`, and `feet` px down inside a box), a column
+ * along y with box centers aligned. Each line first grows toward the side of the screen with more
+ * room, then toward the other side; a full line wraps to the next one, also toward more room, the
+ * widest/tallest cat apart, whose first cat sits level with ours.
  */
 function lineSpots(column: boolean, me: Rect, meOcc: Rect, meFeet: number, occ: Rect[], w: number, feet: number, S: Rect & { top: number }) {
   const mine = { x: me.x + meOcc.x, y: me.y + meOcc.y, w: meOcc.w, h: meOcc.h };
@@ -84,25 +85,27 @@ function lineSpots(column: boolean, me: Rect, meOcc: Rect, meFeet: number, occ: 
   const dy = mine.y + mine.h / 2 < (S.top + S.h) / 2 ? 1 : -1;
   const d = column ? dy : dx;
   const line = Math.max(...occ.map((o) => (column ? o.w : o.h))) + GAP;
-  const start = column ? (dy > 0 ? mine.y + mine.h : mine.y) : dx > 0 ? mine.x + mine.w : mine.x;
+  const along = (r: Rect) => (column ? [r.y, r.h] : [r.x, r.w]);
+  const [lo, hi] = column ? [S.top, S.h] : [0, S.w];
+  const [ma, ml] = along(mine);
   const spots: Pos[] = [];
   let k = 0; // line
-  let n = 0; // cats in it
-  let edge = start; // where its last cat ends, along the line
+  let span: Pos | null = [ma, ma + ml]; // what the line covers so far, along it; null = empty
+  let dir = d; // side it grows to now
   for (const o of occ) {
+    const [a, len] = along(o);
     for (;;) {
-      const [a, len] = column ? [o.y, o.h] : [o.x, o.w];
-      const at = d > 0 ? edge + GAP - a : edge - GAP - a - len;
-      const across = column ? me.x + (me.w - w) / 2 + dx * k * line : meFeet - feet + dy * k * line;
-      // off screen along the line: next line; a line always gets one cat so this ends (too small
-      // a screen: overlap). Across it the spots are clamped onto the screen later.
-      if (n > 0 && (column ? at + a < S.top || at + a + len > S.h : at + a < 0 || at + a + len > S.w)) {
-        [k, n, edge] = [k + 1, 0, start];
+      const at: number = !span ? ma + (ml - len) / 2 - a : dir > 0 ? span[1] + GAP - a : span[0] - GAP - a - len;
+      // off screen along the line: other side, then next line; a line always gets one cat so this
+      // ends (too small a screen: overlap). Across it the spots are clamped onto the screen later.
+      if (span && (at + a < lo || at + a + len > hi)) {
+        if (dir === d) dir = -d;
+        else [k, span, dir] = [k + 1, null, d];
         continue;
       }
+      const across = column ? me.x + (me.w - w) / 2 + dx * k * line : meFeet - feet + dy * k * line;
       spots.push(column ? [across, at] : [at, across]);
-      edge = d > 0 ? at + a + len : at + a;
-      n++;
+      span = span ? [Math.min(span[0], at + a), Math.max(span[1], at + a + len)] : [at + a, at + a + len];
       break;
     }
   }
@@ -311,11 +314,15 @@ export default function Overlay() {
     // screen coordinates: the window may move under the pointer while it grows
     const [sx, sy] = [e.screenX, e.screenY];
     const cats = figs.filter((f) => f.id !== id);
+    // free layout: every cat stays where it is, also the ones still in their first spot (those
+    // follow ours), so they are saved once the drag really starts
+    const pinned = { ...prefs.catPos, ...Object.fromEntries(placed.map((o) => [o.m.id, o.base])) };
     let last: { dx: number; dy: number } | null = null;
     dragged.current = false;
     const move = (ev: PointerEvent) => {
       const [dx, dy] = [ev.screenX - sx, ev.screenY - sy];
       if (!last && Math.hypot(dx, dy) < 4) return;
+      if (!last) update({ catPos: pinned });
       const p: Pos = [from[0] + dx, from[1] + dy];
       const [x, y] = ev.altKey ? p : snap(p, w, h, fig, cats, S);
       last = { dx: x - from[0], dy: y - from[1] };
@@ -328,7 +335,7 @@ export default function Overlay() {
       setDrag(null);
       if (!last) return;
       const p = clamp([from[0] + last.dx, from[1] + last.dy], w, h);
-      update(id === "me" ? { myPos: p } : { catPos: { ...prefs.catPos, [id]: p } });
+      update(id === "me" ? { myPos: p } : { catPos: { ...pinned, [id]: p } });
     };
     addEventListener("pointermove", move);
     addEventListener("pointerup", up);
