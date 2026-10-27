@@ -140,6 +140,23 @@ pub fn pick(stacks: &[Stack], def: Def, qty: u32) -> Option<Vec<(u64, u32)>> {
     (left == 0).then_some(out)
 }
 
+/// Our stacks after an exchange took `inputs` and Steam answered with `result` (the items it
+/// changed or made, see `wait`).
+pub fn apply(stacks: &mut Vec<Stack>, inputs: &[(u64, u32)], result: &[Stack]) {
+    for (id, qty) in inputs {
+        if let Some(s) = stacks.iter_mut().find(|s| s.instance == *id) {
+            s.qty = s.qty.saturating_sub(*qty);
+        }
+    }
+    for r in result {
+        match stacks.iter_mut().find(|s| s.instance == r.instance) {
+            Some(s) => *s = *r,
+            None => stacks.push(*r),
+        }
+    }
+    stacks.retain(|s| s.qty > 0);
+}
+
 pub fn count(stacks: &[Stack], def: Def) -> u32 {
     stacks.iter().filter(|s| s.def == def).map(|s| s.qty).sum()
 }
@@ -193,5 +210,25 @@ mod tests {
         assert_eq!(pick(&s, 5, 5), Some(vec![(1, 3), (3, 2)]));
         assert_eq!(pick(&s, 5, 8), None);
         assert_eq!(count(&s, 5), 7);
+    }
+
+    #[test]
+    fn apply_swaps_returned_helpers() {
+        // chest exchange: one token off a stack of 3, helpers 96/97 come back as new instances
+        let mut s = vec![
+            Stack { instance: 1, def: 98, qty: 3 },
+            Stack { instance: 2, def: 96, qty: 1 },
+            Stack { instance: 3, def: 97, qty: 1 },
+        ];
+        let result = [
+            Stack { instance: 4, def: 21, qty: 1 },
+            Stack { instance: 5, def: 96, qty: 1 },
+            Stack { instance: 6, def: 97, qty: 1 },
+        ];
+        apply(&mut s, &[(1, 1), (2, 1), (3, 1)], &result);
+        assert_eq!(count(&s, 98), 2);
+        assert_eq!(pick(&s, 96, 1), Some(vec![(5, 1)]));
+        assert_eq!(pick(&s, 97, 1), Some(vec![(6, 1)]));
+        assert_eq!(count(&s, 21), 1);
     }
 }

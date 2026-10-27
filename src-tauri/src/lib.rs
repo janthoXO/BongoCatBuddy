@@ -248,7 +248,7 @@ async fn open_chest(app: AppHandle, kind: String, gift: Option<bool>) -> Result<
             inputs.extend(inventory::pick(&stacks, def, 1).ok_or("No chest token yet")?);
         }
         let result = inventory::exchange(recipe, &inputs);
-        refresh(app, sh);
+        exchanged(app, sh, &inputs, &result);
         let won = result?
             .iter()
             .map(|s| s.def)
@@ -324,7 +324,7 @@ async fn craft(app: AppHandle, recipe: Def, items: Vec<(Def, u32)>) -> Result<Ve
                 inputs.extend(inventory::pick(&stacks, def, qty).ok_or("You don't own enough of that item")?);
             }
             let result = inventory::exchange(recipe, &inputs);
-            refresh(app, sh);
+            exchanged(app, sh, &inputs, &result);
             let result = result?;
             bump_stat(sh, "Exchanges");
             won.extend(result.iter().map(|s| s.def).filter(|d| !input_defs.contains(d)).take(1));
@@ -387,6 +387,19 @@ fn owned(stacks: &[Stack]) -> Vec<Owned> {
 }
 
 /// Reloads the inventory from Steam and tells the windows.
+/// Updates our stacks from an exchange's own result. A GetAllItems right after can still return
+/// the old items, and the next exchange would then send the helper tokens it just used up (fails).
+fn exchanged(app: &AppHandle, sh: &Shared, inputs: &[(u64, u32)], result: &Result<Vec<Stack>, String>) {
+    let Ok(items) = result else { return refresh(app, sh) };
+    let now = {
+        let mut stacks = sh.stacks.lock().unwrap();
+        let Some(s) = stacks.as_mut() else { return };
+        inventory::apply(s, inputs, items);
+        owned(s)
+    };
+    let _ = app.emit("inventory", now);
+}
+
 fn refresh(app: &AppHandle, sh: &Shared) {
     match inventory::all_items() {
         Ok(stacks) => {
