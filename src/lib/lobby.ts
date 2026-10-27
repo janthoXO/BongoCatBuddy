@@ -87,12 +87,14 @@ export const remoteLayout = (scale: number) => {
 
 /**
  * Members in the player's order: the tracked ones (`order`, set by dragging in the Lobby tab)
- * first, in that order, then everyone else in Steam's order.
+ * first, in that order, then everyone else by steam id. So a joining player squeezes in at their
+ * place either way, which can push the last cat out of `maxCats`.
  */
 export function ordered<T extends { id: string }>(members: T[], order: string[]): T[] {
   const rank = new Map(order.map((id, i) => [id, i]));
   const tracked = members.filter((m) => rank.has(m.id)).sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
-  return [...tracked, ...members.filter((m) => !rank.has(m.id))];
+  const rest = members.filter((m) => !rank.has(m.id)).sort((a, b) => a.id.length - b.id.length || (a.id < b.id ? -1 : 1));
+  return [...tracked, ...rest];
 }
 
 /**
