@@ -506,6 +506,7 @@ export default function Overlay() {
   };
 
   const boxLeft = (L.w - L.boxW) / 2;
+  const chestsRight = me[0] + L.w / 2 < S.w / 2;
   // Chests flank the score pill under the cat, so they never cover the art.
   const headY = TOP + 95 * L.u; // around the cat's head: emotes and hearts float up from here
   const rowTop = TOP + L.boxH - ART_END * L.u + 2;
@@ -524,6 +525,7 @@ export default function Overlay() {
           catalog={catalog}
           prefs={prefs}
           hovered={hover === m.id}
+          chestsRight={x + R.w / 2 < S.w / 2}
           x={x - ox}
           y={y - oy}
           drag={free ? { onPointerDown: startDrag(m.id, base, R.w, R.h, remoteFig), wasDragged: () => dragged.current } : undefined}
@@ -629,9 +631,10 @@ export default function Overlay() {
           className="absolute left-0 flex flex-col items-center gap-1"
           style={{ top: rowTop, width: L.w }}
         >
-          {/* score and ready chests centered; the hover buttons hang off its right end so they
-              don't shift it (they stay mounted: the cat layout measures them, see `occupied`) */}
-          <div className="relative flex h-6 items-center gap-1">
+          {/* score centered; ready chests hang off it toward more screen room, the hover buttons
+              off the other end, so neither shifts it (the buttons stay mounted: the cat layout
+              measures them, see `occupied`) */}
+          <div className="relative flex h-6 items-center">
             {!prefs.hideCounter && (
               <span
                 data-solid
@@ -642,23 +645,25 @@ export default function Overlay() {
                 {score ? score.current.toLocaleString("en-US").replace(/,/g, " ") : "…"}
               </span>
             )}
-            <Chest
-              kind="cosmetic"
-              onReady={(r) => setChestReady((c) => (c.cosmetic === r ? c : { ...c, cosmetic: r }))}
-              gift={gift.cosmetic}
-              tokens={catalog ? (catalog.get(CHEST_TOKEN)?.qty ?? 0) : null}
-              score={score?.current ?? null}
-              onWon={onWon}
-            />
-            <Chest
-              kind="emote"
-              onReady={(r) => setChestReady((c) => (c.emote === r ? c : { ...c, emote: r }))}
-              gift={gift.emote}
-              tokens={catalog ? (catalog.get(EMOTE_CHEST_TOKEN)?.qty ?? 0) : null}
-              score={score?.current ?? null}
-              onWon={onWon}
-            />
-            <div className="absolute top-0 left-full ml-1 flex gap-1">
+            <div className={`absolute top-0 flex gap-1 ${chestsRight ? "left-full ml-1" : "right-full mr-1"}`}>
+              <Chest
+                kind="cosmetic"
+                onReady={(r) => setChestReady((c) => (c.cosmetic === r ? c : { ...c, cosmetic: r }))}
+                gift={gift.cosmetic}
+                tokens={catalog ? (catalog.get(CHEST_TOKEN)?.qty ?? 0) : null}
+                score={score?.current ?? null}
+                onWon={onWon}
+              />
+              <Chest
+                kind="emote"
+                onReady={(r) => setChestReady((c) => (c.emote === r ? c : { ...c, emote: r }))}
+                gift={gift.emote}
+                tokens={catalog ? (catalog.get(EMOTE_CHEST_TOKEN)?.qty ?? 0) : null}
+                score={score?.current ?? null}
+                onWon={onWon}
+              />
+            </div>
+            <div className={`absolute top-0 flex gap-1 ${chestsRight ? "right-full mr-1" : "left-full ml-1"}`}>
               {lobby && (
                 <button
                   type="button"
