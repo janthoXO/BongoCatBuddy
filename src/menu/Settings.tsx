@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { availableMonitors, primaryMonitor } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
+import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
@@ -128,7 +130,7 @@ export function Settings() {
           <Toggle label="Others' new items" checked={prefs.multiplayerPopups} onChange={set("multiplayerPopups")} />
         </Section>
 
-        <Section title="System">
+        <Section title="System" footer="Attach the log file to bug reports.">
           <Toggle
             label="Start with system"
             checked={autostart}
@@ -137,6 +139,11 @@ export function Settings() {
               (v ? enable() : disable()).catch(() => setAutostart(!v));
             }}
           />
+          <Row label="Log file">
+            <Button variant="secondary" size="sm" onClick={() => invoke("open_logs").catch(() => {})}>
+              Show log file
+            </Button>
+          </Row>
         </Section>
       </div>
     </ScrollArea>

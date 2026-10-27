@@ -247,6 +247,7 @@ async fn open_chest(app: AppHandle, kind: String, gift: Option<bool>) -> Result<
         for def in [token, ACHIEVEMENT_TOKEN, MANUAL_TOKEN] {
             inputs.extend(inventory::pick(&stacks, def, 1).ok_or("No chest token yet")?);
         }
+        log::info!("open {kind} chest: recipe {recipe}, inputs {inputs:?}");
         let result = inventory::exchange(recipe, &inputs);
         exchanged(app, sh, &inputs, &result);
         let won = result?
@@ -369,7 +370,11 @@ async fn blocking<T: Send + 'static>(
             return Err("Steam not available".into());
         }
         let _guard = sh.busy.lock().unwrap();
-        f(&app, &sh)
+        let r = f(&app, &sh);
+        if let Err(e) = &r {
+            log::warn!("command failed: {e}");
+        }
+        r
     })
     .await
     .map_err(|e| e.to_string())?
@@ -403,11 +408,11 @@ fn exchanged(app: &AppHandle, sh: &Shared, inputs: &[(u64, u32)], result: &Resul
 fn refresh(app: &AppHandle, sh: &Shared) {
     match inventory::all_items() {
         Ok(stacks) => {
-            eprintln!("inventory loaded: {} stacks", stacks.len());
+            log::info!("inventory loaded: {} stacks", stacks.len());
             let _ = app.emit("inventory", owned(&stacks));
             *sh.stacks.lock().unwrap() = Some(stacks);
         }
-        Err(e) => eprintln!("inventory refresh failed: {e}"),
+        Err(e) => log::warn!("inventory refresh failed: {e}"),
     }
 }
 
@@ -436,7 +441,7 @@ fn bump_stat(sh: &Shared, name: &str) {
 /// Shows (or with None clears) the overlay's notice.
 fn notify(app: &AppHandle, shared: &Shared, msg: Option<String>) {
     if let Some(m) = &msg {
-        eprintln!("{m}");
+        log::info!("{m}");
     }
     *shared.notice.lock().unwrap() = msg.clone();
     let _ = app.emit("notice", msg);
@@ -532,18 +537,30 @@ fn show_menu(app: &AppHandle, toggle: bool) -> tauri::Result<()> {
 
 const STARTING: &str = "Starting Steam…";
 
+/// Opens a URL or folder with the OS default handler.
+fn open_with_os(target: &std::ffi::OsStr) -> std::io::Result<std::process::Child> {
+    #[cfg(target_os = "macos")]
+    let cmd = "open";
+    #[cfg(windows)]
+    let cmd = "explorer";
+    #[cfg(not(any(target_os = "macos", windows)))]
+    let cmd = "xdg-open";
+    std::process::Command::new(cmd).arg(target).spawn()
+}
+
+/// Shows the log folder, so users can attach the log to a bug report.
+#[tauri::command]
+fn open_logs(app: AppHandle) -> Result<(), String> {
+    let dir = app.path().app_log_dir().map_err(|e| e.to_string())?;
+    open_with_os(dir.as_os_str()).map(|_| ()).map_err(|e| e.to_string())
+}
+
 /// Connects to Steam, starting it through the steam:// handler if it isn't running.
 /// Runs on its own thread so the windows show while Steam boots.
 fn connect_steam(app: &AppHandle, sh: &Shared) {
     let mut res = Client::init_app(APP_ID);
     if res.is_err() {
-        #[cfg(target_os = "macos")]
-        let launched = std::process::Command::new("open").arg("steam://").spawn();
-        #[cfg(windows)]
-        let launched = std::process::Command::new("explorer").arg("steam://").spawn();
-        #[cfg(not(any(target_os = "macos", windows)))]
-        let launched = std::process::Command::new("xdg-open").arg("steam://").spawn();
-        if launched.is_ok() {
+        if open_with_os("steam://".as_ref()).is_ok() {
             notify(app, sh, Some(STARTING.into()));
             for _ in 0..60 {
                 thread::sleep(Duration::from_secs(2));
@@ -575,7 +592,20 @@ fn connect_steam(app: &AppHandle, sh: &Shared) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Log file in the OS log folder (Settings > Show log file), also printed to stdout.
+    let prev = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |p| {
+        log::error!("{p}");
+        prev(p);
+    }));
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .level(log::LevelFilter::Info)
+                .max_file_size(1_000_000)
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
+                .build(),
+        )
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .setup(move |app| {
             // No Dock app: tray only, and its windows can float over other apps' fullscreen spaces.
@@ -654,6 +684,7 @@ pub fn run() {
             craft,
             use_emote,
             gift_chest,
+            open_logs,
             lobby::get_lobby,
             lobby::lobby_create,
             lobby::lobby_join,
@@ -756,7 +787,7 @@ fn main_loop(app: AppHandle, sh: Arc<Shared>, taps: Arc<AtomicU32>) {
         if sh.catalog.lock().unwrap().is_none()
             && let Some(defs) = inventory::definitions()
         {
-            eprintln!("item catalog loaded: {} definitions", defs.len());
+            log::info!("item catalog loaded: {} definitions", defs.len());
             let _ = app.emit("catalog", &defs);
             *sh.catalog.lock().unwrap() = Some(defs);
         }
@@ -772,7 +803,7 @@ fn main_loop(app: AppHandle, sh: Arc<Shared>, taps: Arc<AtomicU32>) {
             ) else {
                 continue;
             };
-            eprintln!("steam stats loaded: BongoTap={tap} BongoBeat={beat} BongoMinus={minus}");
+            log::info!("steam stats loaded: BongoTap={tap} BongoBeat={beat} BongoMinus={minus}");
             *stats = Some(Stats { tap: tap.max(minus), beat, minus });
             changed = true;
         }
@@ -787,7 +818,7 @@ fn main_loop(app: AppHandle, sh: Arc<Shared>, taps: Arc<AtomicU32>) {
         }
         if last_store.elapsed() >= STORE_EVERY {
             let _ = us.store_stats();
-            eprintln!("steam stats stored: BongoTap={} BongoBeat={}", s.tap, s.beat);
+            log::info!("steam stats stored: BongoTap={} BongoBeat={}", s.tap, s.beat);
             last_store = Instant::now();
         }
         drop(stats);
@@ -827,6 +858,6 @@ fn background(
             refresh(&app, &sh);
         }
         Ok(_) => {}
-        Err(e) => eprintln!("inventory job failed: {e}"),
+        Err(e) => log::warn!("inventory job failed: {e}"),
     });
 }

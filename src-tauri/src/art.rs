@@ -36,7 +36,7 @@ pub fn ensure(app_data: &Path, install_dir: Option<&str>) -> Option<PathBuf> {
     match extract(&data, &tmp).and_then(|_| fs::rename(&tmp, &art)) {
         Ok(()) => Some(art),
         Err(e) => {
-            eprintln!("art extraction failed, using placeholder: {e}");
+            log::warn!("art extraction failed, using placeholder: {e}");
             let _ = fs::remove_dir_all(&tmp);
             None
         }

@@ -47,6 +47,10 @@ Version lives in `package.json`; `tauri.conf.json` reads it.
 - `tauri.windows.conf.json` bundles `steam_api64.dll` next to the exe.
 - Main loop pumps Steam callbacks and lobby tick. Stats uploaded about once a minute like the game.
 
+## Logs
+
+- `tauri-plugin-log`, Info level, 1 MB, keeps one old file. Goes to the OS log dir (`~/Library/Logs/com.bongocatbuddy.app/`, Windows `%LOCALAPPDATA%\com.bongocatbuddy.app\logs`) and stdout. Panics and every failed `blocking` command are logged. Settings > "Show log file" opens the folder.
+
 ## Look
 
 Minimal, system-like, not gamified. Tokens in `src/index.css`: system font, neutral grays, system blue. Light/dark follows the OS (`prefers-color-scheme`; the `dark:` variant is that media query, no class). Overlay chrome (score, name tags, bubbles, small buttons) uses the `pill` utility. Settings stay few: what can be a direct interaction is one (click cat = score bar, right-click = menu, emote bar only when emotes are picked, chests only while you hold a token of that kind (Steam's playtime generator drops them)). Menu is a narrow tray panel, so UI must fit 380 px wide..
