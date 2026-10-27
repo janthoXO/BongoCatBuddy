@@ -742,6 +742,23 @@ pub fn run() {
         });
 }
 
+/// A stale grant (ad-hoc signed app updated, e.g. by brew) still shows as allowed in Settings, but
+/// the event tap then gets nothing and `listen` doesn't fail, so ask macOS up front. Prompts once.
+#[cfg(target_os = "macos")]
+fn listen_allowed() -> bool {
+    #[link(name = "CoreGraphics", kind = "framework")]
+    unsafe extern "C" {
+        fn CGPreflightListenEventAccess() -> bool;
+        fn CGRequestListenEventAccess() -> bool;
+    }
+    unsafe { CGPreflightListenEventAccess() || CGRequestListenEventAccess() }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn listen_allowed() -> bool {
+    true
+}
+
 /// Counts key and mouse-button presses anywhere on the system. Held keys
 /// count once (auto-repeat is ignored).
 fn spawn_input(app: AppHandle, shared: Arc<Shared>, taps: Arc<AtomicU32>) {
@@ -749,30 +766,36 @@ fn spawn_input(app: AppHandle, shared: Arc<Shared>, taps: Arc<AtomicU32>) {
         let mut held = HashSet::new();
         let sh = shared.clone();
         let hook_app = app.clone();
-        let result = listen(move |e| match e.event_type {
-            EventType::KeyPress(k) if held.insert(k) => {
-                taps.fetch_add(1, Ordering::Relaxed);
-            }
-            EventType::KeyRelease(k) => {
-                held.remove(&k);
-            }
-            EventType::ButtonPress(_) if !sh.ignore_mouse.load(Ordering::Relaxed) => {
-                taps.fetch_add(1, Ordering::Relaxed);
-            }
-            // ponytail: rdev reports macOS points, which match logical px; check units if Windows/Linux builds matter
-            EventType::MouseMove { x, y } => update_hit(&hook_app, &sh.hit, Some((x, y))),
-            // ends a native window drag, which the page itself never sees; payload: Alt held (no snapping)
-            EventType::ButtonRelease(Button::Left) if sh.hit.lock().unwrap().hovered.is_some() => {
-                let alt = held.contains(&Key::Alt) || held.contains(&Key::AltGr);
-                let _ = hook_app.emit_to("main", "mouse-up", alt);
-            }
-            _ => {}
-        });
-        if let Err(e) = result {
+        let err = if !listen_allowed() {
+            Some("no permission".to_string())
+        } else {
+            listen(move |e| match e.event_type {
+                EventType::KeyPress(k) if held.insert(k) => {
+                    taps.fetch_add(1, Ordering::Relaxed);
+                }
+                EventType::KeyRelease(k) => {
+                    held.remove(&k);
+                }
+                EventType::ButtonPress(_) if !sh.ignore_mouse.load(Ordering::Relaxed) => {
+                    taps.fetch_add(1, Ordering::Relaxed);
+                }
+                // ponytail: rdev reports macOS points, which match logical px; check units if Windows/Linux builds matter
+                EventType::MouseMove { x, y } => update_hit(&hook_app, &sh.hit, Some((x, y))),
+                // ends a native window drag, which the page itself never sees; payload: Alt held (no snapping)
+                EventType::ButtonRelease(Button::Left) if sh.hit.lock().unwrap().hovered.is_some() => {
+                    let alt = held.contains(&Key::Alt) || held.contains(&Key::AltGr);
+                    let _ = hook_app.emit_to("main", "mouse-up", alt);
+                }
+                _ => {}
+            })
+            .err()
+            .map(|e| format!("{e:?}"))
+        };
+        if let Some(e) = err {
             notify(
                 &app,
                 &shared,
-                Some(format!("Can't read keys ({e:?}). Allow Input Monitoring/Accessibility, then restart.")),
+                Some(format!("Can't read keys ({e}). Allow Input Monitoring/Accessibility, then restart.")),
             );
             // No global mouse events either: poll the cursor, slower, so the cats stay clickable.
             loop {
