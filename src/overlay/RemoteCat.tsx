@@ -251,7 +251,7 @@ export function RemoteCat({
           <span
             data-solid
             className={`pill max-w-28 truncate px-2 text-xs font-medium leading-6 ${
-              hovered ? "" : "opacity-0"
+              hovered || !prefs.hideCounter ? "" : "opacity-0"
             }`}
           >
             {member.name}

@@ -85,7 +85,7 @@ export function Settings() {
   return (
     <ScrollArea className="min-h-0 flex-1">
       <div className="flex flex-col gap-6 p-1 pr-3 pb-4">
-        <Section title="Cat" footer="Click your cat to show or hide the score. Right-click it to open this menu. Random outfit skips hidden items.">
+        <Section title="Cat" footer="Click your cat to show or hide the score and name tags. Right-click it to open this menu. Random outfit skips hidden items.">
           <Range label="Size" range={CAT_SCALE} value={prefs.catScale} format={(v) => `${Math.round(v * 100)}%`} onCommit={(v) => update({ catScale: v })} />
           {screens.length > 1 && (
             <Choice
