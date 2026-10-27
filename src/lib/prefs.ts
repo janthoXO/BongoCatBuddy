@@ -9,7 +9,7 @@ export type Prefs = {
   flip: boolean;
   /** mouse clicks don't count as taps */
   ignoreMouse: boolean;
-  /** score bar hidden; clicking our cat toggles it */
+  /** score only on hover; clicking our cat toggles it */
   hideCounter: boolean;
   autoEquipDrops: boolean;
   /** minutes between random outfits (hat + skin), 0 = off; like the game's hat randomizer */

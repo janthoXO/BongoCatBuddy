@@ -289,7 +289,7 @@ export default function Overlay() {
     setNativeFrom(win);
     getCurrentWindow().startDragging().catch(() => setNativeFrom(null));
   };
-  // Clicking our cat (no drag) shows or hides the score bar.
+  // Clicking our cat (no drag) shows or hides the score bar (hidden: only on hover).
   const toggleBar = () => update({ hideCounter: !prefs.hideCounter });
   // Rust reports the release (the page never sees it during a native drag, nor the click): save
   // where we are, snapped to the screen edges unless Alt is held. The other cats follow ours, so
@@ -674,16 +674,17 @@ export default function Overlay() {
               off the other end, so neither shifts it (the buttons stay mounted: the cat layout
               measures them, see `occupied`) */}
           <div className="relative flex h-6 items-center">
-            {!prefs.hideCounter && (
-              <span
-                data-solid
-                title={score ? `Lifetime: ${score.lifetime}` : undefined}
-                className="pill flex items-center gap-1 px-2 text-sm font-medium leading-6 tabular-nums"
-              >
-                <PawPrint className="size-3.5 text-muted-foreground" />
-                {score ? score.current.toLocaleString("en-US").replace(/,/g, " ") : "…"}
-              </span>
-            )}
+            {/* hidden = invisible, not gone, so the chests next to it stay put */}
+            <span
+              data-solid
+              title={score ? `Lifetime: ${score.lifetime}` : undefined}
+              className={`pill flex items-center gap-1 px-2 text-sm font-medium leading-6 tabular-nums transition-opacity ${
+                prefs.hideCounter && !hovered ? "opacity-0" : ""
+              }`}
+            >
+              <PawPrint className="size-3.5 text-muted-foreground" />
+              {score ? score.current.toLocaleString("en-US").replace(/,/g, " ") : "…"}
+            </span>
             <div className={`absolute top-0 flex gap-1 ${chestsRight ? "left-full ml-1" : "right-full mr-1"}`}>
               <Chest
                 kind="cosmetic"
