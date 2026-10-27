@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { ChevronDownIcon, ChevronRightIcon, ChevronUpIcon, CopyIcon, EllipsisIcon, EyeIcon, EyeOffIcon, GiftIcon, LogInIcon, LogOutIcon, RefreshCwIcon, UserPlusIcon } from "lucide-react";
+import { ChevronRightIcon, CopyIcon, EllipsisIcon, EyeIcon, EyeOffIcon, GiftIcon, GripVerticalIcon, LogInIcon, LogOutIcon, RefreshCwIcon, UserPlusIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -279,29 +279,59 @@ function Joined({ lobby, friends }: { lobby: LobbyState; friends: ReactNode }) {
 
   const others = ordered(lobby.members.filter((m) => m.id !== lobby.me), prefs.catOrder);
   const mine = lobby.members.find((m) => m.id === lobby.me);
-  const move = (id: string, dir: -1 | 1) => update({ catOrder: moveCat(others.map((o) => o.id), prefs.catOrder, id, dir) });
-  const row = (m: LobbyState["members"][number], i = -1) => {
+  const ids = others.map((o) => o.id);
+  // Dragging a player reorders the list live; the order is saved on release (sets their cat's spot).
+  const [drag, setDrag] = useState<{ id: string; to: number } | null>(null);
+  const list = useRef<HTMLDivElement>(null);
+  const shown = others.filter((o) => o.id !== drag?.id);
+  const dragged = drag && others.find((o) => o.id === drag.id);
+  if (dragged) shown.splice(drag.to, 0, dragged);
+  const startDrag = (id: string) => (e: React.PointerEvent<HTMLElement>) => {
+    if (e.button !== 0 || (e.target as Element).closest("button")) return;
+    const el = e.currentTarget;
+    el.setPointerCapture(e.pointerId);
+    let to = ids.indexOf(id);
+    setDrag({ id, to });
+    const move = (ev: PointerEvent) => {
+      const rows = [...list.current!.querySelectorAll<HTMLElement>("[data-row]")].filter((r) => r.dataset.row !== id);
+      to = rows.filter((r) => {
+        const b = r.getBoundingClientRect();
+        return b.top + b.height / 2 < ev.clientY;
+      }).length;
+      setDrag({ id, to });
+    };
+    const end = () => {
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", end);
+      el.removeEventListener("pointercancel", end);
+      update({ catOrder: moveCat(ids, prefs.catOrder, id, to) });
+      setDrag(null);
+    };
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", end);
+    el.addEventListener("pointercancel", end);
+  };
+  const row = (m: LobbyState["members"][number]) => {
     const hidden = prefs.hiddenPlayers.includes(m.id);
+    const other = m.id !== lobby.me;
     return (
-      <div key={m.id} className="flex items-center gap-2">
+      <div
+        key={m.id}
+        data-row={other ? m.id : undefined}
+        className={`flex touch-none items-center gap-2 select-none ${other ? "cursor-grab" : ""} ${drag?.id === m.id ? "cursor-grabbing opacity-60" : ""}`}
+        onPointerDown={other ? startDrag(m.id) : undefined}
+      >
+        {other && <GripVerticalIcon className="-mx-1 size-4 shrink-0 text-muted-foreground" />}
         <span className="min-w-0 truncate font-medium">{m.name}</span>
         {m.id === lobby.me && <Badge>You</Badge>}
         {icon(m.hat)}
         {icon(m.skin)}
         {(m.chest_ready || m.emote_chest_ready) && <GiftIcon className="size-4 text-primary" aria-label="Chest ready" />}
         <span className="flex-1" />
-        {m.id !== lobby.me && (
-          <>
-            <Button variant="ghost" size="icon-sm" aria-label="Move up" disabled={i === 0} onClick={() => move(m.id, -1)}>
-              <ChevronUpIcon />
-            </Button>
-            <Button variant="ghost" size="icon-sm" aria-label="Move down" disabled={i === others.length - 1} onClick={() => move(m.id, 1)}>
-              <ChevronDownIcon />
-            </Button>
-            <Button variant="ghost" size="icon-sm" aria-label={hidden ? "Show cat" : "Hide cat"} onClick={() => toggleHidden(m.id)}>
-              {hidden ? <EyeOffIcon /> : <EyeIcon />}
-            </Button>
-          </>
+        {other && (
+          <Button variant="ghost" size="icon-sm" aria-label={hidden ? "Show cat" : "Hide cat"} onClick={() => toggleHidden(m.id)}>
+            {hidden ? <EyeOffIcon /> : <EyeIcon />}
+          </Button>
         )}
       </div>
     );
@@ -347,7 +377,9 @@ function Joined({ lobby, friends }: { lobby: LobbyState; friends: ReactNode }) {
       </Card>
       <Card title={`Players · ${lobby.members.length}`}>
         {mine && row(mine)}
-        {others.map(row)}
+        <div ref={list} className="flex flex-col gap-3">
+          {shown.map(row)}
+        </div>
       </Card>
       {friends}
     </>

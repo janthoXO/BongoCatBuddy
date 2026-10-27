@@ -97,17 +97,16 @@ export function ordered<T extends { id: string }>(members: T[], order: string[])
 }
 
 /**
- * The new `order` after `id` swaps with its neighbour in `shown` (ids as `ordered` lists them),
- * up (-1) or down (1). Saved: both swapped cats, the ones moved before and every cat between
- * them. Saved players not here now keep their place after the one before them.
+ * The new `order` after `id` is dragged to index `to` in `shown` (ids as `ordered` lists them).
+ * Saved: the dragged cat, the ones it passed, the ones moved before and every cat between them.
+ * Saved players not here now keep their place after the one before them.
  */
-export function moveCat(shown: string[], order: string[], id: string, dir: -1 | 1): string[] {
+export function moveCat(shown: string[], order: string[], id: string, to: number): string[] {
   const i = shown.indexOf(id);
-  const j = i + dir;
-  if (i < 0 || j < 0 || j >= shown.length) return order;
-  const next = [...shown];
-  [next[i], next[j]] = [next[j], next[i]];
-  const keep = new Set([...order, next[i], next[j]]);
+  if (i < 0 || to === i) return order;
+  const next = shown.filter((m) => m !== id);
+  next.splice(to, 0, id);
+  const keep = new Set([...order, ...next.slice(Math.min(i, to), Math.max(i, to) + 1)]);
   const at = next.flatMap((m, k) => (keep.has(m) ? [k] : []));
   const out = next.slice(at[0], at[at.length - 1] + 1);
   order.forEach((m, k) => {
