@@ -29,6 +29,7 @@ jobs:
   package:
     needs: versioning
     uses: ./.github/workflows/package.yml
+    secrets: inherit # signing cert
     with:
       version: ${{ needs.versioning.outputs.version }}
 
