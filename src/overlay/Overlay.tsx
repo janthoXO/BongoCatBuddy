@@ -9,7 +9,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { CatFigure, FIGURE_H, FIGURE_W } from "@/components/CatFigure";
 import { EmoteParticle } from "@/components/EmoteParticle";
-import { CH, lobbySend, MAX_SPEECH, onLobbyMsg, remoteLayout, useLobby } from "@/lib/lobby";
+import { CH, lobbySend, MAX_SPEECH, onLobbyMsg, ordered, remoteLayout, useLobby } from "@/lib/lobby";
 import { RemoteCat } from "./RemoteCat";
 import { maskOf, onMask } from "@/lib/mask";
 
@@ -235,7 +235,7 @@ export default function Overlay() {
   const shift: Pos = nativeFrom && win ? [win.x - nativeFrom.x, win.y - nativeFrom.y] : [0, 0];
   const me = at("me", [myBase[0] + shift[0], myBase[1] + shift[1]]);
   const others = lobby
-    ? lobby.members.filter((m) => m.id !== lobby.me && !prefs.hiddenPlayers.includes(m.id)).slice(0, prefs.maxCats)
+    ? ordered(lobby.members, prefs.catOrder).filter((m) => m.id !== lobby.me && !prefs.hiddenPlayers.includes(m.id)).slice(0, prefs.maxCats)
     : [];
   // The cat art ends 14 units above the figure's bottom (see remoteLayout). What each box really
   // shows is measured after rendering (`occ`); until then the whole box counts.

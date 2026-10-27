@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { ChevronRightIcon, CopyIcon, EllipsisIcon, EyeIcon, EyeOffIcon, GiftIcon, LogInIcon, LogOutIcon, RefreshCwIcon, UserPlusIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon, ChevronUpIcon, CopyIcon, EllipsisIcon, EyeIcon, EyeOffIcon, GiftIcon, LogInIcon, LogOutIcon, RefreshCwIcon, UserPlusIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { iconUrl, useItems } from "@/lib/items";
-import { VISIBILITY_NAMES, useLobby, type Friend, type ListedLobby, type LobbyPage, type LobbyState, type Visibility } from "@/lib/lobby";
+import { VISIBILITY_NAMES, moveCat, ordered, useLobby, type Friend, type ListedLobby, type LobbyPage, type LobbyState, type Visibility } from "@/lib/lobby";
 import { usePrefs } from "@/lib/prefs";
 
 const chipClass =
@@ -277,6 +277,36 @@ function Joined({ lobby, friends }: { lobby: LobbyState; friends: ReactNode }) {
     return it && <img key={id} src={iconUrl(it)} alt={it.name} title={it.name} className="size-6 object-contain" onError={(e) => (e.currentTarget.style.display = "none")} />;
   };
 
+  const others = ordered(lobby.members.filter((m) => m.id !== lobby.me), prefs.catOrder);
+  const mine = lobby.members.find((m) => m.id === lobby.me);
+  const move = (id: string, dir: -1 | 1) => update({ catOrder: moveCat(others.map((o) => o.id), prefs.catOrder, id, dir) });
+  const row = (m: LobbyState["members"][number], i = -1) => {
+    const hidden = prefs.hiddenPlayers.includes(m.id);
+    return (
+      <div key={m.id} className="flex items-center gap-2">
+        <span className="min-w-0 truncate font-medium">{m.name}</span>
+        {m.id === lobby.me && <Badge>You</Badge>}
+        {icon(m.hat)}
+        {icon(m.skin)}
+        {(m.chest_ready || m.emote_chest_ready) && <GiftIcon className="size-4 text-primary" aria-label="Chest ready" />}
+        <span className="flex-1" />
+        {m.id !== lobby.me && (
+          <>
+            <Button variant="ghost" size="icon-sm" aria-label="Move up" disabled={i === 0} onClick={() => move(m.id, -1)}>
+              <ChevronUpIcon />
+            </Button>
+            <Button variant="ghost" size="icon-sm" aria-label="Move down" disabled={i === others.length - 1} onClick={() => move(m.id, 1)}>
+              <ChevronDownIcon />
+            </Button>
+            <Button variant="ghost" size="icon-sm" aria-label={hidden ? "Show cat" : "Hide cat"} onClick={() => toggleHidden(m.id)}>
+              {hidden ? <EyeOffIcon /> : <EyeIcon />}
+            </Button>
+          </>
+        )}
+      </div>
+    );
+  };
+
   return (
     <>
       <Card title="Lobby">
@@ -316,24 +346,8 @@ function Joined({ lobby, friends }: { lobby: LobbyState; friends: ReactNode }) {
         </Button>
       </Card>
       <Card title={`Players · ${lobby.members.length}`}>
-        {lobby.members.map((m) => {
-          const hidden = prefs.hiddenPlayers.includes(m.id);
-          return (
-            <div key={m.id} className="flex items-center gap-2">
-              <span className="min-w-0 truncate font-medium">{m.name}</span>
-              {m.id === lobby.me && <Badge>You</Badge>}
-              {icon(m.hat)}
-              {icon(m.skin)}
-              {(m.chest_ready || m.emote_chest_ready) && <GiftIcon className="size-4 text-primary" aria-label="Chest ready" />}
-              <span className="flex-1" />
-              {m.id !== lobby.me && (
-                <Button variant="ghost" size="icon-sm" aria-label={hidden ? "Show cat" : "Hide cat"} onClick={() => toggleHidden(m.id)}>
-                  {hidden ? <EyeOffIcon /> : <EyeIcon />}
-                </Button>
-              )}
-            </div>
-          );
-        })}
+        {mine && row(mine)}
+        {others.map(row)}
       </Card>
       {friends}
     </>
