@@ -55,7 +55,7 @@ Version lives in `package.json`; `tauri.conf.json` reads it.
 
 ## Look
 
-Minimal, system-like, not gamified. Tokens in `src/index.css`: system font, neutral grays, system blue. Light/dark follows the OS (`prefers-color-scheme`; the `dark:` variant is that media query, no class). Overlay chrome (score, name tags, bubbles, small buttons) uses the `pill` utility. Settings stay few: what can be a direct interaction is one (click cat = score bar and name tags, right-click = menu, emote bar only when emotes are picked, chests only while you hold a token of that kind (Steam's playtime generator drops them)). Menu is a narrow tray panel, so UI must fit 380 px wide..
+Minimal, system-like, not gamified. Tokens in `src/index.css`: system font, neutral grays, system blue. Light/dark follows the OS (`prefers-color-scheme`; the `dark:` variant is that media query, no class). Overlay chrome (score, name tags, bubbles, small buttons) uses the `pill` utility. Settings stay few: what can be a direct interaction is one (click cat = score bar / name tag, right-click = menu, emote bar only when emotes are picked, chests only while you hold a token of that kind (Steam's playtime generator drops them)). Menu is a narrow tray panel, so UI must fit 380 px wide..
 
 ## Menu panel
 

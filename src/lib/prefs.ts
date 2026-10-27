@@ -9,7 +9,7 @@ export type Prefs = {
   flip: boolean;
   /** mouse clicks don't count as taps */
   ignoreMouse: boolean;
-  /** score and name tags only on hover; clicking our cat toggles it */
+  /** score bar hidden; clicking our cat toggles it */
   hideCounter: boolean;
   autoEquipDrops: boolean;
   /** minutes between random outfits (hat + skin), 0 = off; like the game's hat randomizer */
@@ -35,6 +35,9 @@ export type Prefs = {
   muteChats: boolean;
   /** steam ids whose cat is not shown */
   hiddenPlayers: string[];
+  /** other players' name tags shown, except for the ids in `nameFlipped`; clicking a cat toggles its tag */
+  showNames: boolean;
+  nameFlipped: string[];
   /** screen (monitor name) the overlay covers; the primary one when unset or gone */
   monitor?: string;
   /** our cat's box, px inside the overlay */
@@ -74,6 +77,8 @@ const DEFAULTS: Prefs = {
   receivePats: true,
   muteChats: false,
   hiddenPlayers: [],
+  showNames: true,
+  nameFlipped: [],
   catPos: {},
   catOrder: [],
   equipped: {},

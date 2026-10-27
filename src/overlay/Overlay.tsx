@@ -289,8 +289,17 @@ export default function Overlay() {
     setNativeFrom(win);
     getCurrentWindow().startDragging().catch(() => setNativeFrom(null));
   };
-  // Clicking our cat (no drag) shows or hides the score and the other cats' name tags.
+  // Clicking our cat (no drag) shows or hides the score bar.
   const toggleBar = () => update({ hideCounter: !prefs.hideCounter });
+  const nameShown = (id: string) => prefs.showNames !== prefs.nameFlipped.includes(id);
+  // Clicking another cat toggles its name tag. Once every shown cat agrees, that becomes the
+  // default for all and the per-player list is dropped.
+  const toggleName = (id: string) => {
+    const flipped = prefs.nameFlipped.includes(id) ? prefs.nameFlipped.filter((f) => f !== id) : [...prefs.nameFlipped, id];
+    const shown = others.map((m) => prefs.showNames !== flipped.includes(m.id));
+    if (shown.every((s) => s === shown[0])) update({ showNames: shown[0], nameFlipped: [] });
+    else update({ nameFlipped: flipped });
+  };
   // Rust reports the release (the page never sees it during a native drag, nor the click): save
   // where we are, snapped to the screen edges unless Alt is held. The other cats follow ours, so
   // no cat lines. Not moved: it was a click.
@@ -563,7 +572,8 @@ export default function Overlay() {
           member={m}
           catalog={catalog}
           prefs={prefs}
-          hovered={hover === m.id}
+          showName={nameShown(m.id)}
+          onToggleName={() => toggleName(m.id)}
           chestsRight={x + R.w / 2 < S.w / 2}
           x={x - ox}
           y={y - oy}
@@ -674,17 +684,16 @@ export default function Overlay() {
               off the other end, so neither shifts it (the buttons stay mounted: the cat layout
               measures them, see `occupied`) */}
           <div className="relative flex h-6 items-center">
-            {/* hidden = invisible, not gone, so the chests next to it stay put */}
-            <span
-              data-solid
-              title={score ? `Lifetime: ${score.lifetime}` : undefined}
-              className={`pill flex items-center gap-1 px-2 text-sm font-medium leading-6 tabular-nums transition-opacity ${
-                prefs.hideCounter && !hovered ? "opacity-0" : ""
-              }`}
-            >
-              <PawPrint className="size-3.5 text-muted-foreground" />
-              {score ? score.current.toLocaleString("en-US").replace(/,/g, " ") : "…"}
-            </span>
+            {!prefs.hideCounter && (
+              <span
+                data-solid
+                title={score ? `Lifetime: ${score.lifetime}` : undefined}
+                className="pill flex items-center gap-1 px-2 text-sm font-medium leading-6 tabular-nums"
+              >
+                <PawPrint className="size-3.5 text-muted-foreground" />
+                {score ? score.current.toLocaleString("en-US").replace(/,/g, " ") : "…"}
+              </span>
+            )}
             <div className={`absolute top-0 flex gap-1 ${chestsRight ? "left-full ml-1" : "right-full mr-1"}`}>
               <Chest
                 kind="cosmetic"
