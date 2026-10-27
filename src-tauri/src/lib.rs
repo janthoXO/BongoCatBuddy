@@ -743,7 +743,8 @@ pub fn run() {
 }
 
 /// A stale grant (ad-hoc signed app updated, e.g. by brew) still shows as allowed in Settings, but
-/// the event tap then gets nothing and `listen` doesn't fail, so ask macOS up front. Prompts once.
+/// the event tap then gets nothing and `listen` doesn't fail, so ask macOS up front. macOS only
+/// prompts when it has no entry for the app at all, so otherwise open the Input Monitoring pane.
 #[cfg(target_os = "macos")]
 fn listen_allowed() -> bool {
     #[link(name = "CoreGraphics", kind = "framework")]
@@ -751,7 +752,11 @@ fn listen_allowed() -> bool {
         fn CGPreflightListenEventAccess() -> bool;
         fn CGRequestListenEventAccess() -> bool;
     }
-    unsafe { CGPreflightListenEventAccess() || CGRequestListenEventAccess() }
+    let ok = unsafe { CGPreflightListenEventAccess() || CGRequestListenEventAccess() };
+    if !ok {
+        let _ = open_with_os("x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent".as_ref());
+    }
+    ok
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -795,7 +800,7 @@ fn spawn_input(app: AppHandle, shared: Arc<Shared>, taps: Arc<AtomicU32>) {
             notify(
                 &app,
                 &shared,
-                Some(format!("Can't read keys ({e}). Allow Input Monitoring/Accessibility, then restart.")),
+                Some(format!("Can't read keys ({e}). Allow Input Monitoring (already on? remove it with − and add the app again), then restart.")),
             );
             // No global mouse events either: poll the cursor, slower, so the cats stay clickable.
             loop {
