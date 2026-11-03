@@ -29,7 +29,7 @@ Version lives in `package.json`; `tauri.conf.json` reads it.
 - `lib.rs` - Tauri commands, tray, windows, global input (rdev), click-through hit testing, main loop (Steam callbacks, taps to stats, lobby tick).
 - `lobby.rs` - Steam lobbies, wired like the game so both clients see each other.
 - `inventory.rs` - blocking wrapper around ISteamInventory (not in steamworks crate).
-- `art.rs` - copies cat sprites out of the local game install.
+- `art.rs` - copies the default cat sprites out of the local game install. Item art comes from the item CDN, except bongo parts (`<Name>Left/LeftPunch/Right/RightPunch`, CDN 404s): `item_art` extracts those on first use into `<app data>/art/items/`.
 - `gameprefs.rs` - the game's own Unity PlayerPrefs, for the shared outfit (see Steam).
 - `devdriver.rs` - debug-only remote control.
 
@@ -40,13 +40,19 @@ Version lives in `package.json`; `tauri.conf.json` reads it.
 - `lib/` - `prefs.ts` (settings, saved in localStorage, broadcast to all windows by "prefs" event), `lobby.ts` (protocol, channels), `items.ts`.
 - `components/` - `CatFigure.tsx`, `EmoteParticle.tsx`, `ui/` (shadcn).
 
+## Cat figure
+
+`CatFigure.tsx`, layout from the game's scene (`BobTransform`): 128-unit squares, body at (-6, 10), hat (10, 45), bongos (-16, -31). Draw order like the game: bongos left punch, body, right paw, bongos left, bongos right (punch), right paw punch, hat. Box 144 x 155 units, `BONGOS_H` (36) taller with bongos (`figureH`). Rows line cats up by their feet without bongos, so bodies stay level and bongos hang below. Score row / name tag sit `ART_END` (14) units above the box bottom either way.
+
+Inventory: one slot each for hat, skin, bongos (`COSMETICS` in `items.ts`). Hats and bongos start with a "None" tile (id -1, not equipped = key missing in `equipped`). Skins have none: no skin = default cat.
+
 ## Steam
 
 - `connect_steam` on own thread: `Client::init_app(3419430)`. Fail = open `steam://`, retry every 2 s up to 2 min, notice "Starting Steam…". Windows show before. `Shared.steam` / `Shared.art` are `OnceLock`, empty until connect. Main loop register callbacks + load inventory on first tick with client.
 - `build.rs` copies Steam runtime lib (`libsteam_api.dylib` / `steam_api64.dll`; `libsteam_api.so` on Linux) from `steamworks-sys` crate sources (version from `Cargo.lock`) into `target/<profile>/`, next to the binary.
 - `tauri.conf.json` bundles it into macOS app: `Contents/MacOS/libsteam_api.dylib`.
 - `tauri.windows.conf.json` bundles `steam_api64.dll` next to the exe.
-- Outfit shared with the game: its Unity PlayerPrefs `EQUIPPED_ITEMS_3`, `[hat,skin]` repeated (3 pairs), -1 none. macOS via `defaults` (domain `com.Irox-Games.BongoCat`, never the plist file, cfprefsd caches). Windows `HKCU\Software\Irox Games\BongoCat`, value `EQUIPPED_ITEMS_3_h<djb2-xor hash>`, REG_BINARY UTF-8 + 0, via `reg.exe` (untested). Only when Steam says the game is installed, checked each start. Start: game's value changed since last sync (`gameOutfit` pref) = worn in game meanwhile, we take it; else game gets ours. Game and Buddy can't run at once (see Joining from Steam), so no live conflict.
+- Outfit shared with the game: its Unity PlayerPrefs `EQUIPPED_ITEMS_3`, JSON list of equipped item ids (hat, skin, bongos; slot comes from the item, old saves repeat ids or hold -1). macOS via `defaults` (domain `com.Irox-Games.BongoCat`, never the plist file, cfprefsd caches). Windows `HKCU\Software\Irox Games\BongoCat`, value `EQUIPPED_ITEMS_3_h<djb2-xor hash>`, REG_BINARY UTF-8 + 0, via `reg.exe` (untested). Only when Steam says the game is installed, checked each start. Start: game's value changed since last sync (`gameOutfit` pref) = worn in game meanwhile, we take it; else game gets ours. Game and Buddy can't run at once (see Joining from Steam), so no live conflict.
 - Main loop pumps Steam callbacks and lobby tick. Stats uploaded about once a minute like the game.
 
 ## Logs
@@ -102,6 +108,16 @@ Lobby data:
 
 Member data: `hat`, `skin`, `bongos` (item id, -1 none), `chest_ready`, `emote_chest_ready` (`"true"`/`"false"`).
 
+Ownership proof (game `LobbyItemOwnership`): the game only draws another player's hat/skin/bongos, and only plays their emotes, once it has checked they own them. Without it they see a plain cat. `publish_proof` in `lobby.rs`:
+
+| Key | Value |
+|---|---|
+| `item_proof_emotes` | equipped emote ids, comma list |
+| `item_proof_0`..`3` | base64 of `SerializeResult(GetItemsByID(instances of worn items + emotes))`, 8000 chars each |
+| `item_proof_count` | chunks used, 0-4 |
+
+Readers `DeserializeResult` it and accept it for 1 hour. We republish when the outfit/emotes change, when the member list changes (game does that for joiners), and every 30 min.
+
 Chat: UTF-8 JSON `{"Channel":n,"Message":"..."}`.
 
 | Channel | Meaning | Message |
@@ -134,6 +150,10 @@ Buddy runs as app 3419430, so Steam treats it as the game. Tested on macOS (issu
 | Game running, then Buddy | Not tested (game would not launch on the test Mac). Unknown who gets the callback. |
 
 steamworks 0.13 wraps both callbacks, so no raw `sys` needed.
+
+## Reading the game
+
+The game is Unity Mono, so its C# decompiles cleanly. `scripts/decompile-game.sh` runs ilspycmd in a throwaway .NET container (Docker) on the installed game (read-only) and writes `decompiled/` (gitignored). Start with `BongoCat/Cat.cs`, `CatCosmetics.cs`, `BongoCat.Multiplayer/`. Lobby key getters (`Hat`, `Skin`, `Bongos`) live in `Heathen.Steamworks.dll`: `ilspycmd -t Heathen.SteamworksIntegration.LobbyMemberData`. Scene layout (sprite positions, draw order) is in `sharedassets0.assets`, readable with UnityPy (`BobTransform` holds the cat layers).
 
 ## Dev driver
 

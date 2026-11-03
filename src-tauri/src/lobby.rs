@@ -1,7 +1,8 @@
 //! Steam lobbies, wired exactly like the game so both clients see each other:
 //! lobby data `LOBBY_NAME`, `LOBBYCODE`, `PRIVATE_LOBBY`, `z_heathenMode`, member data
-//! `hat`, `skin`, `chest_ready`, `emote_chest_ready`, and chat messages that are UTF-8
-//! JSON `{"Channel":n,"Message":"..."}`.
+//! `hat`, `skin`, `bongos`, `chest_ready`, `emote_chest_ready`, the ownership proof
+//! (`item_proof_*`, see `publish_proof`), and chat messages that are UTF-8 JSON
+//! `{"Channel":n,"Message":"..."}`.
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -18,7 +19,7 @@ use steamworks::{
 use steamworks_sys as sys;
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::Shared;
+use crate::{inventory, Shared};
 
 const MAX_MEMBERS: u32 = 250;
 const TIMEOUT: Duration = Duration::from_secs(15);
@@ -28,6 +29,13 @@ const MEMBER_POLL: Duration = Duration::from_millis(500);
 const CH_TAPS: i32 = 2;
 /// The game drops a frame's taps instead of sending 8 or more.
 const MAX_TAPS_PER_MSG: u32 = 7;
+
+/// The game drops a proof older than an hour, and asks for a new one when someone joins.
+const PROOF_REFRESH: Duration = Duration::from_secs(30 * 60);
+const PROOF_RETRY: Duration = Duration::from_secs(30);
+/// Base64 proof split into member data values of this size, at most `PROOF_CHUNKS` of them.
+const PROOF_CHUNK: usize = 8000;
+const PROOF_CHUNKS: usize = 4;
 
 const BASE59: &[u8] = b"0123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
@@ -56,6 +64,8 @@ pub struct Lobby {
     me: Mutex<BTreeMap<String, String>>,
     members: Mutex<Vec<SteamId>>,
     dirty: AtomicBool,
+    /// What the last proof covered (`proof_key`) and when it is due again.
+    proof: Mutex<Option<(String, Instant)>>,
 }
 
 impl Lobby {
@@ -70,6 +80,7 @@ pub struct Member {
     name: String,
     hat: Option<i32>,
     skin: Option<i32>,
+    bongos: Option<i32>,
     chest_ready: bool,
     emote_chest_ready: bool,
 }
@@ -168,6 +179,7 @@ fn state(c: &Client, lobby: &Lobby) -> Option<State> {
                 name: c.friends().get_friend(u).name(),
                 hat: num(u, "hat"),
                 skin: num(u, "skin"),
+                bongos: num(u, "bongos"),
                 chest_ready: flag(u, "chest_ready"),
                 emote_chest_ready: flag(u, "emote_chest_ready"),
             })
@@ -319,12 +331,74 @@ pub fn tick(c: &Client, app: &AppHandle, lobby: &Lobby, taps: u32, last_poll: &m
                 c.friends().set_rich_presence("steam_player_group_size", Some(&now.len().to_string()));
                 *was = now;
                 lobby.dirty.store(true, Ordering::Relaxed);
+                // like the game: a new proof for whoever came in
+                *lobby.proof.lock().unwrap() = None;
             }
+        }
+        let key = proof_key(lobby);
+        let mut proof = lobby.proof.lock().unwrap();
+        if proof.as_ref().is_none_or(|(k, due)| *k != key || Instant::now() >= *due) {
+            *proof = Some((key, Instant::now() + PROOF_REFRESH));
+            let (c, app) = (c.clone(), app.clone());
+            thread::spawn(move || {
+                if let Err(e) = publish_proof(&c, &app, id) {
+                    log::warn!("item proof: {e}");
+                    let sh = app.state::<Arc<Shared>>();
+                    if let Some((_, due)) = sh.lobby.proof.lock().unwrap().as_mut() {
+                        *due = Instant::now() + PROOF_RETRY;
+                    }
+                }
+            });
         }
     }
     if lobby.dirty.swap(false, Ordering::Relaxed) {
         let _ = app.emit("lobby", state(c, lobby));
     }
+}
+
+/// What we wear and show (item ids from our member data); a new proof when it changes.
+fn proof_key(lobby: &Lobby) -> String {
+    let me = lobby.me.lock().unwrap();
+    ["hat", "skin", "bongos", "item_proof_emotes"].map(|k| me.get(k).map_or("", |v| v)).join(";")
+}
+
+/// The game only shows another player's outfit and emotes once it has checked they own them:
+/// each player puts a Steam-signed inventory snapshot of those items (SerializeResult, base64)
+/// in member data `item_proof_0..3` (8000 chars each) and `item_proof_count`. Without it the
+/// game shows our cat with no hat, skin or bongos.
+fn publish_proof(c: &Client, app: &AppHandle, id: LobbyId) -> Result<(), String> {
+    let sh = app.state::<Arc<Shared>>();
+    let key = proof_key(&sh.lobby);
+    let defs: Vec<inventory::Def> = key.split([';', ',']).filter_map(|v| v.parse().ok()).filter(|&d| d >= 0).collect();
+    let stacks = sh.stacks.lock().unwrap().clone().ok_or("inventory not loaded yet")?;
+    let instances: Vec<u64> =
+        defs.iter().filter_map(|&d| stacks.iter().find(|s| s.def == d && s.qty > 0)).map(|s| s.instance).collect();
+    let proof = if instances.is_empty() {
+        String::new()
+    } else {
+        use base64::Engine;
+        base64::engine::general_purpose::STANDARD.encode(inventory::serialize(&instances)?)
+    };
+    let chunks = chunks(&proof)?;
+    if sh.lobby.current() != Some(id) {
+        return Ok(());
+    }
+    let mm = c.matchmaking();
+    for i in 0..PROOF_CHUNKS {
+        mm.set_lobby_member_data(id, &format!("item_proof_{i}"), chunks.get(i).copied().unwrap_or(""));
+    }
+    mm.set_lobby_member_data(id, "item_proof_count", &chunks.len().to_string());
+    log::info!("item proof: {} items, {} chars", instances.len(), proof.len());
+    Ok(())
+}
+
+/// Splits a base64 proof (ASCII) into member data values.
+fn chunks(proof: &str) -> Result<Vec<&str>, String> {
+    let out: Vec<&str> = proof.as_bytes().chunks(PROOF_CHUNK).map(|b| std::str::from_utf8(b).unwrap()).collect();
+    if out.len() > PROOF_CHUNKS {
+        return Err(format!("proof too big: {} chars", proof.len()));
+    }
+    Ok(out)
 }
 
 fn send(c: &Client, id: LobbyId, channel: i32, message: &str) -> bool {
@@ -575,5 +649,13 @@ mod tests {
         assert_eq!(decode(&encode(id)), Some(id));
         assert_eq!(decode("0I"), None); // 'I' isn't in the alphabet
         assert_eq!(decode("zzzzzzzzzzzzzzzzzzzz"), None); // overflow
+    }
+
+    #[test]
+    fn proof_chunks() {
+        assert!(chunks("").unwrap().is_empty());
+        let p = "a".repeat(PROOF_CHUNK + 1);
+        assert_eq!(chunks(&p).unwrap().iter().map(|c| c.len()).collect::<Vec<_>>(), [PROOF_CHUNK, 1]);
+        assert!(chunks(&"a".repeat(PROOF_CHUNK * PROOF_CHUNKS + 1)).is_err());
     }
 }

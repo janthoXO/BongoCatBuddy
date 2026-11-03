@@ -90,6 +90,8 @@ struct Shared {
     /// Set once Steam is up, which can be a while after start (see connect_steam).
     steam: OnceLock<Client>,
     art: OnceLock<PathBuf>,
+    /// The game's install folder, once Steam is up (empty when not installed).
+    install: OnceLock<String>,
     /// Steam says the game is installed: we share its outfit (see gameprefs).
     game_installed: AtomicBool,
     stats: Mutex<Option<Stats>>,
@@ -108,6 +110,14 @@ type Sh<'a> = State<'a, Arc<Shared>>;
 #[tauri::command]
 fn get_art(state: Sh) -> Option<String> {
     state.art.get().map(|p| p.to_string_lossy().into_owned())
+}
+
+/// Path of one of the game's item sprites the CDN lacks (bongo parts), see `art::item`.
+#[tauri::command]
+async fn item_art(app: AppHandle, state: Sh<'_>, name: String) -> Result<String, String> {
+    let install = state.install.get().filter(|d| !d.is_empty()).ok_or("game not installed")?;
+    let data = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    art::item(&data, install, &name).map(|p| p.to_string_lossy().into_owned()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -130,9 +140,9 @@ fn get_inventory(state: Sh) -> Option<Vec<Owned>> {
     state.stacks.lock().unwrap().as_deref().map(owned)
 }
 
-/// The game's (hat, skin), -1 = none; None when it has none stored. Err: game not installed.
+/// The game's equipped item ids; None when it has none stored. Err: game not installed.
 #[tauri::command]
-async fn game_outfit(state: Sh<'_>) -> Result<Option<(i64, i64)>, String> {
+async fn game_outfit(state: Sh<'_>) -> Result<Option<Vec<i64>>, String> {
     if !state.game_installed.load(Ordering::Relaxed) {
         return Err("game not installed".into());
     }
@@ -140,11 +150,11 @@ async fn game_outfit(state: Sh<'_>) -> Result<Option<(i64, i64)>, String> {
 }
 
 #[tauri::command]
-async fn set_game_outfit(state: Sh<'_>, hat: i64, skin: i64) -> Result<(), String> {
+async fn set_game_outfit(state: Sh<'_>, ids: Vec<i64>) -> Result<(), String> {
     if !state.game_installed.load(Ordering::Relaxed) {
         return Err("game not installed".into());
     }
-    gameprefs::set_outfit(hat, skin).inspect_err(|e| log::warn!("game outfit not saved: {e}"))
+    gameprefs::set_outfit(&ids).inspect_err(|e| log::warn!("game outfit not saved: {e}"))
 }
 
 #[tauri::command]
@@ -608,6 +618,7 @@ fn connect_steam(app: &AppHandle, sh: &Shared) {
         notify(app, sh, None);
     }
     let install = client.apps().app_install_dir(AppId(APP_ID));
+    let _ = sh.install.set(install.clone());
     sh.game_installed.store(client.apps().is_app_installed(AppId(APP_ID)), Ordering::Relaxed);
     // ponytail: a window that already asked for art keeps the placeholder until restart
     if sh.art.get().is_none()
@@ -707,6 +718,7 @@ pub fn run() {
             get_inventory,
             set_ignore_mouse,
             game_outfit,
+            item_art,
             set_game_outfit,
             set_hit_rects,
             fetch_art,

@@ -21,8 +21,8 @@ It is a lightweight Tauri app (Rust and the system web view), not a game engine.
 - **Desktop pet overlay.** A transparent, always-on-top cat that taps with every global key press and mouse click, in any app. Click the cat to always show your score or only on hover, right-click it for the menu. Cat size, flip, screen choice and whether mouse clicks count are configurable.
 - **Tray menu.** Click the tray (menu bar) icon for a small panel with your items, crafting, lobbies and settings. It closes when you click elsewhere.
 - **Real Steam progress.** The app talks to Steam directly through the Steamworks API, so taps, score and stats count for your Steam account in the real game.
-- **Inventory, chests and crafting.** Browse your hats, skins and emotes with a live preview on your cat. When a cosmetic or emote chest is ready, it appears next to your score (1000 taps each). Craft new items from duplicates.
-- **Cosmetics and emotes.** Equip hats and skins, or let a random outfit change every 15, 30 or 60 minutes. Pick favorite emotes; they pop up in a small bar above your cat when you hover it.
+- **Inventory, chests and crafting.** Browse your hats, skins, bongos and emotes with a live preview on your cat. When a cosmetic or emote chest is ready, it appears next to your score (1000 taps each). Craft new items from duplicates.
+- **Cosmetics and emotes.** Equip hats, skins and bongos (or wear no hat or no bongos), or let a random outfit change every 15, 30 or 60 minutes. Pick favorite emotes; they pop up in a small bar above your cat when you hover it.
 - **Multiplayer lobbies.** Join the game's Steam lobbies by code, join a random lobby, pick from the public list, or invite online Steam friends. A lobby holds up to 250 members. Other players' cats appear on your screen and yours on theirs.
 - **Social extras.** Pat other cats, send chat bubbles, see what others get from chests, and gift a chest to another player for 1000 taps.
 - **Light on memory.** The overlay window is only as big as the box around the cats, not the whole screen. In a dev build that is about 118 MB in total, against about 330 MB for a full-screen overlay. A side-by-side comparison with the game is planned in [#14](https://github.com/janthoXO/BongoCatBuddy/issues/14).
@@ -72,7 +72,7 @@ Yes. The app uses the Steamworks API with the game's app id (3419430), so taps, 
 
 ### Does it ship the game's art?
 
-No. The cat sprites are not included. On first start the app extracts them from your own installed copy of the game into its app data folder. If the game is not installed, a placeholder cat is shown.
+No. The cat sprites are not included. On first start the app extracts them from your own installed copy of the game into its app data folder, and bongo art the first time a cat wears them. If the game is not installed, a placeholder cat is shown and bongos are not drawn.
 
 ### Can I play in the same lobbies as other Bongo Cat players?
 

@@ -36,20 +36,25 @@ fn inv() -> *mut sys::ISteamInventory {
     unsafe { sys::SteamAPI_SteamInventory_v003() }
 }
 
-/// Waits for a result handle and returns its items, always freeing the handle.
-fn wait(handle: sys::SteamInventoryResult_t) -> Result<Vec<Stack>, String> {
+/// Waits until a result handle is no longer pending; frees it on timeout.
+fn status(handle: sys::SteamInventoryResult_t) -> Result<sys::EResult, String> {
     let start = Instant::now();
-    let status = loop {
+    loop {
         let s = unsafe { sys::SteamAPI_ISteamInventory_GetResultStatus(inv(), handle) };
         if s != sys::EResult::k_EResultPending {
-            break s;
+            return Ok(s);
         }
         if start.elapsed() > TIMEOUT {
             unsafe { sys::SteamAPI_ISteamInventory_DestroyResult(inv(), handle) };
             return Err("Steam inventory timed out".into());
         }
         thread::sleep(Duration::from_millis(50));
-    };
+    }
+}
+
+/// Waits for a result handle and returns its items, always freeing the handle.
+fn wait(handle: sys::SteamInventoryResult_t) -> Result<Vec<Stack>, String> {
+    let status = status(handle)?;
     let mut out = Vec::new();
     if status == sys::EResult::k_EResultOK {
         let mut n = 0u32;
@@ -85,6 +90,26 @@ fn call(f: impl FnOnce(*mut sys::SteamInventoryResult_t) -> bool) -> Result<Vec<
 
 pub fn all_items() -> Result<Vec<Stack>, String> {
     call(|h| unsafe { sys::SteamAPI_ISteamInventory_GetAllItems(inv(), h) })
+}
+
+/// Steam-signed snapshot of these item instances, which other players can check we own
+/// (DeserializeResult). Fresh for an hour, see `lobby::publish_proof`.
+pub fn serialize(instances: &[u64]) -> Result<Vec<u8>, String> {
+    let mut h: sys::SteamInventoryResult_t = -1;
+    if !unsafe { sys::SteamAPI_ISteamInventory_GetItemsByID(inv(), &mut h, instances.as_ptr(), instances.len() as u32) } {
+        return Err("Steam rejected the inventory request".into());
+    }
+    let st = status(h)?;
+    let mut n = 0u32;
+    let mut out = Vec::new();
+    let ok = st == sys::EResult::k_EResultOK
+        && unsafe { sys::SteamAPI_ISteamInventory_SerializeResult(inv(), h, std::ptr::null_mut(), &mut n) }
+        && {
+            out.resize(n as usize, 0u8);
+            unsafe { sys::SteamAPI_ISteamInventory_SerializeResult(inv(), h, out.as_mut_ptr().cast(), &mut n) }
+        };
+    unsafe { sys::SteamAPI_ISteamInventory_DestroyResult(inv(), h) };
+    if ok { Ok(out) } else { Err(format!("Steam inventory serialize failed: {st:?}")) }
 }
 
 pub fn heartbeat() {

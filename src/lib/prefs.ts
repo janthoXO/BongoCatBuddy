@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
+import type { Cosmetic } from "@/lib/items";
 
 /** Player settings and local item state, shared by all windows. Defaults follow the game. */
 export type Prefs = {
@@ -12,7 +13,7 @@ export type Prefs = {
   /** score only on hover; clicking our cat toggles it */
   hideCounter: boolean;
   autoEquipDrops: boolean;
-  /** minutes between random outfits (hat + skin), 0 = off; like the game's hat randomizer */
+  /** minutes between random outfits (hat, skin, bongos), 0 = off; like the game's hat randomizer */
   randomOutfit: number;
   /** random outfits only use favorites */
   randomFavorites: boolean;
@@ -43,9 +44,10 @@ export type Prefs = {
   catPos: Record<string, [number, number]>;
   /** steam ids moved in the Lobby tab, in the player's order (see `ordered` in lobby.ts) */
   catOrder: string[];
-  equipped: Partial<Record<"hat" | "skin", number>>;
-  /** (hat, skin) in the game's own prefs when we last synced them, -1 = none */
-  gameOutfit?: [number, number];
+  /** worn item per slot; none = no hat / default skin / no bongos */
+  equipped: Partial<Record<Cosmetic, number>>;
+  /** the game's own equipped ids (sorted) when we last synced them */
+  gameOutfit?: number[];
   /** emote/consumable ids shown in the emote wheel */
   emotes: number[];
   favorites: number[];

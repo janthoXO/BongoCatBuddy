@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { CheckIcon, EyeIcon, EyeOffIcon, PackageOpenIcon, SearchIcon, StarIcon } from "lucide-react";
+import { BanIcon, CheckIcon, EyeIcon, EyeOffIcon, PackageOpenIcon, SearchIcon, StarIcon } from "lucide-react";
 import { CatFigure } from "@/components/CatFigure";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Toggle } from "@/components/ui/toggle";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { QUALITIES, QUALITY_COLORS, artUrl, useItems, type Item, type Quality } from "@/lib/items";
+import { QUALITIES, QUALITY_COLORS, artUrl, isCosmetic, useItems, type Cosmetic, type Item, type Quality } from "@/lib/items";
 import { MAX_WHEEL_EMOTES, usePrefs } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { ItemIcon, qualityBadge, tint } from "./ItemIcon";
@@ -18,17 +18,25 @@ import { ItemIcon, qualityBadge, tint } from "./ItemIcon";
 const CATEGORIES = {
   hat: "Hats",
   skin: "Skins",
+  bongos: "Bongos",
   emote: "Emotes",
 } as const;
 type Category = keyof typeof CATEGORIES;
 
 /** Tokens and UI themes (they only theme the game's own menus) have nothing to do here: not listed. */
 function categoryOf(i: Item): Category | null {
-  if (i.slot === "hat") return "hat";
-  if (i.slot === "skin") return "skin";
+  if (isCosmetic(i.slot)) return i.slot;
   if (i.slot === "emote" || i.slot === "consumable") return "emote";
   return null;
 }
+
+/** First tile of hats and bongos: wear none. Id -1 like the game's "none". */
+const NONE = -1;
+const none = (slot: "hat" | "bongos"): Item => ({
+  id: NONE, name: slot === "hat" ? "No hat" : "No bongos", slot, quality: null,
+  craftQuality: null, craftGroup: null, event: null, color: "", qty: 0,
+});
+const noneFor = (c: Category) => (c === "hat" || c === "bongos" ? none(c) : null);
 
 const toggle = (list: number[], id: number) =>
   list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
@@ -55,7 +63,7 @@ export function Inventory() {
     );
   }, [owned, showHidden, prefs.hidden, query, qualities]);
   const counts = useMemo(() => {
-    const c: Record<Category, number> = { hat: 0, skin: 0, emote: 0 };
+    const c: Record<Category, number> = { hat: 0, skin: 0, bongos: 0, emote: 0 };
     for (const i of visible) {
       const cat = categoryOf(i);
       if (cat) c[cat]++;
@@ -64,7 +72,7 @@ export function Inventory() {
   }, [visible]);
   const items = useMemo(() => {
     const rank = (i: Item) => (i.quality ? QUALITIES.indexOf(i.quality) : -1);
-    return visible
+    const list = visible
       .filter((i) => categoryOf(i) === category)
       .sort(
         (a, b) =>
@@ -72,22 +80,23 @@ export function Inventory() {
           rank(b) - rank(a) ||
           a.name.localeCompare(b.name),
       );
-  }, [visible, category, prefs.favorites]);
+    const n = noneFor(category);
+    return n && list.length && !query.trim() && !qualities.length ? [n, ...list] : list;
+  }, [visible, category, prefs.favorites, query, qualities]);
 
-  const selected = owned?.find((i) => i.id === selectedId) ?? null;
+  const selected = (selectedId === NONE ? noneFor(category) : owned?.find((i) => i.id === selectedId)) ?? null;
+  const worn = (s: Cosmetic) => owned?.find((o) => o.id === prefs.equipped[s]);
   const isEquipped = (i: Item) =>
-    i.slot === "hat" || i.slot === "skin"
-      ? prefs.equipped[i.slot] === i.id
+    isCosmetic(i.slot)
+      ? i.id === NONE ? !worn(i.slot) : prefs.equipped[i.slot] === i.id
       : prefs.emotes.includes(i.id);
   const wheelFull = prefs.emotes.length >= MAX_WHEEL_EMOTES;
 
-  const worn = (s: "hat" | "skin") => owned?.find((o) => o.id === prefs.equipped[s]);
-
   /** Equip/unequip or add/remove from the wheel. */
   function primary(item: Item) {
-    if (item.slot === "hat" || item.slot === "skin") {
+    if (isCosmetic(item.slot)) {
       const { [item.slot]: _, ...rest } = prefs.equipped;
-      update({ equipped: isEquipped(item) ? rest : { ...prefs.equipped, [item.slot]: item.id } });
+      update({ equipped: isEquipped(item) || item.id === NONE ? rest : { ...prefs.equipped, [item.slot]: item.id } });
     } else if (item.slot === "emote" || item.slot === "consumable") {
       if (!isEquipped(item) && wheelFull) return;
       update({ emotes: toggle(prefs.emotes, item.id) });
@@ -102,7 +111,7 @@ export function Inventory() {
         ) : (
           <>
             <div className="flex h-28 w-28 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-secondary">
-              <CatFigure unit={0.65} hat={worn("hat")} skin={worn("skin")} />
+              <CatFigure unit={0.65} hat={worn("hat")} skin={worn("skin")} bongos={worn("bongos")} />
             </div>
             <p className="text-sm text-muted-foreground">Tap an item to preview it</p>
           </>
@@ -214,7 +223,7 @@ export function Inventory() {
                     />
                   }
                 >
-                  <ItemIcon item={i} className="size-12" />
+                  {i.id === NONE ? <BanIcon className="size-8 text-muted-foreground" /> : <ItemIcon item={i} className="size-12" />}
                   {i.qty > 1 && (
                     <Badge variant="secondary" className="absolute -right-1 -bottom-1 h-4 px-1 text-[10px] tabular-nums">
                       {i.qty}
@@ -244,7 +253,9 @@ export function Inventory() {
   function details(item: Item) {
     const fav = prefs.favorites.includes(item.id);
     const hid = prefs.hidden.includes(item.id);
-    const equipSlot = item.slot === "hat" || item.slot === "skin" ? item.slot : null;
+    const equipSlot = isCosmetic(item.slot) ? item.slot : null;
+    const isNone = item.id === NONE;
+    const look = (s: Cosmetic) => (equipSlot === s ? (isNone ? undefined : item) : worn(s));
     const wheelSlot = item.slot === "emote" || item.slot === "consumable";
     const inWheel = prefs.emotes.includes(item.id);
     const blocked = wheelSlot && !inWheel && wheelFull;
@@ -258,8 +269,9 @@ export function Inventory() {
             <CatFigure
               key={item.id}
               unit={0.65}
-              hat={equipSlot === "hat" ? item : worn("hat")}
-              skin={equipSlot === "skin" ? item : worn("skin")}
+              hat={look("hat")}
+              skin={look("skin")}
+              bongos={look("bongos")}
             />
           ) : (
             <BigArt key={item.id} item={item} />
@@ -273,18 +285,19 @@ export function Inventory() {
                 {item.quality}
               </Badge>
             )}
-            {item.slot && <Badge variant="secondary">{item.slot}</Badge>}
+            {item.slot && !isNone && <Badge variant="secondary">{item.slot}</Badge>}
             {item.event && <Badge variant="secondary">{item.event}</Badge>}
           </div>
-          <p className="text-sm text-muted-foreground tabular-nums">Owned ×{item.qty}</p>
+          {!isNone && <p className="text-sm text-muted-foreground tabular-nums">Owned ×{item.qty}</p>}
           <div className="flex items-center gap-1.5">
             {(equipSlot || wheelSlot) && (
-              <Button size="sm" disabled={blocked} onClick={() => primary(item)} className="flex-1 rounded-lg">
+              <Button size="sm" disabled={blocked || (isNone && isEquipped(item))} onClick={() => primary(item)} className="flex-1 rounded-lg">
                 {equipSlot
-                  ? prefs.equipped[equipSlot] === item.id ? "Unequip" : "Equip"
+                  ? isNone ? (isEquipped(item) ? "Wearing none" : "Wear none") : isEquipped(item) ? "Unequip" : "Equip"
                   : inWheel ? "Remove from wheel" : "Add to wheel"}
               </Button>
             )}
+            {!isNone && <>
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -315,6 +328,7 @@ export function Inventory() {
               </TooltipTrigger>
               <TooltipContent>{hid ? "Unhide" : "Hide"}</TooltipContent>
             </Tooltip>
+            </>}
           </div>
           {blocked && <p className="text-xs text-muted-foreground">Wheel is full ({MAX_WHEEL_EMOTES}).</p>}
         </div>

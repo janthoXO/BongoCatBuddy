@@ -1,34 +1,23 @@
 //! Reads and writes the real game's Unity PlayerPrefs `EQUIPPED_ITEMS_3`, so
 //! our client and the game share the equipped outfit.
 //!
-//! The value is a JSON array of `[hat, skin]` pairs, -1 = none. The game repeats
-//! the same pair; we keep however many it has.
+//! The value is a JSON array of the equipped item ids (hat, skin, bongos, any order;
+//! the game reads each one's slot from its item). Old saves repeat ids, or hold -1.
 
 const KEY: &str = "EQUIPPED_ITEMS_3";
 
-/// The game's equipped (hat, skin), -1 = none. None when the game has never stored one.
-pub fn outfit() -> Option<(i64, i64)> {
-    first_pair(&read(KEY)?)
+/// The game's equipped item ids. None when the game has never stored any.
+pub fn outfit() -> Option<Vec<i64>> {
+    parse(&read(KEY)?)
 }
 
-/// Stores (hat, skin) for the game, in every pair it already has (3 when none yet).
-pub fn set_outfit(hat: i64, skin: i64) -> Result<(), String> {
-    let pairs = read(KEY)
-        .and_then(|s| serde_json::from_str::<Vec<i64>>(&s).ok())
-        .map_or(3, |v| (v.len() / 2).max(1));
-    write(KEY, &format(hat, skin, pairs))
+/// Stores the equipped item ids for the game.
+pub fn set_outfit(ids: &[i64]) -> Result<(), String> {
+    write(KEY, &serde_json::to_string(ids).unwrap())
 }
 
-fn first_pair(s: &str) -> Option<(i64, i64)> {
-    match serde_json::from_str::<Vec<i64>>(s.trim()).ok()?[..] {
-        [h, k, ..] => Some((h, k)),
-        _ => None,
-    }
-}
-
-fn format(hat: i64, skin: i64, pairs: usize) -> String {
-    let p = format!("{hat},{skin}");
-    format!("[{}]", vec![p; pairs].join(","))
+fn parse(s: &str) -> Option<Vec<i64>> {
+    serde_json::from_str::<Vec<i64>>(s.trim()).ok()
 }
 
 #[cfg(target_os = "macos")]
@@ -108,11 +97,8 @@ mod tests {
 
     #[test]
     fn parse_and_format() {
-        assert_eq!(first_pair("[267,416,1,2]\n"), Some((267, 416)));
-        assert_eq!(first_pair("[1]"), None);
-        assert_eq!(first_pair("nope"), None);
-        assert_eq!(format(267, 416, 3), "[267,416,267,416,267,416]");
-        assert_eq!(format(-1, -1, 1), "[-1,-1]");
+        assert_eq!(parse("[267,416,267,416]\n"), Some(vec![267, 416, 267, 416]));
+        assert_eq!(parse("nope"), None);
     }
 
     #[test]

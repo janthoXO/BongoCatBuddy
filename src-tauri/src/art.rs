@@ -1,4 +1,5 @@
-//! Copies the default cat sprites out of a locally installed copy of the game.
+//! Copies the default cat sprites out of a locally installed copy of the game,
+//! and item sprites the CDN lacks (bongos) on demand (`item`).
 //!
 //! Each sprite is its own 256x256 RGBA32 Texture2D whose pixels live in
 //! `sharedassets0.assets.resS`, so all we need from the Unity file is the
@@ -8,8 +9,8 @@ use std::fs::{self, File};
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
-/// (texture name in the game, file name we write). The game ships bongo sprites
-/// too, but never shows them, so neither do we.
+/// (texture name in the game, file name we write). Item art comes from the CDN, but
+/// bongo parts are only in the game, see `item`.
 pub const SPRITES: [(&str, &str); 4] = [
     ("CatLeft", "catLeft"),
     ("CatLeftPunch", "catLeftPunch"),
@@ -56,30 +57,57 @@ fn data_dir(install: &Path) -> Option<PathBuf> {
 fn extract(data: &Path, out: &Path) -> io::Result<()> {
     let assets = fs::read(data.join(ASSETS))?;
     let mut res = File::open(data.join(format!("{ASSETS}.resS")))?;
-    let found = find_textures(&assets)?;
+    let found = find_textures(&assets, |n| SPRITES.iter().any(|(s, _)| *s == n))?;
     fs::create_dir_all(out)?;
     for (name, file) in SPRITES {
         let &(_, offset) = found
             .iter()
             .find(|(n, _)| n == name)
             .ok_or_else(|| bad(&format!("texture {name} not found")))?;
-        let mut px = vec![0u8; BYTES as usize];
-        res.seek(SeekFrom::Start(offset))?;
-        res.read_exact(&mut px)?;
-        // Unity stores rows bottom-up.
-        let row = (SIZE * 4) as usize;
-        let flipped: Vec<u8> = px.chunks_exact(row).rev().flatten().copied().collect();
-        let mut enc = png::Encoder::new(File::create(out.join(format!("{file}.png")))?, SIZE, SIZE);
-        enc.set_color(png::ColorType::Rgba);
-        enc.set_depth(png::BitDepth::Eight);
-        enc.write_header()?.write_image_data(&flipped)?;
+        write_png(&mut res, offset, &out.join(format!("{file}.png")))?;
     }
+    Ok(())
+}
+
+/// The game's sprite `name` (e.g. `RhythmDrumsLeft`) as a png in `<app_data>/art/items`,
+/// extracted on first use.
+pub fn item(app_data: &Path, install_dir: &str, name: &str) -> io::Result<PathBuf> {
+    if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric()) {
+        return Err(bad("bad sprite name"));
+    }
+    let dir = app_data.join("art/items");
+    let path = dir.join(format!("{name}.png"));
+    if path.exists() {
+        return Ok(path);
+    }
+    let data = data_dir(Path::new(install_dir)).ok_or_else(|| bad("game not installed"))?;
+    let found = find_textures(&fs::read(data.join(ASSETS))?, |n| n == name)?;
+    let &(_, offset) = found.first().ok_or_else(|| bad(&format!("texture {name} not found")))?;
+    fs::create_dir_all(&dir)?;
+    // written aside and moved in, so a half-written file never counts as done
+    let tmp = dir.join(format!("{name}.tmp"));
+    write_png(&mut File::open(data.join(format!("{ASSETS}.resS")))?, offset, &tmp)?;
+    fs::rename(&tmp, &path)?;
+    Ok(path)
+}
+
+fn write_png(res: &mut File, offset: u64, path: &Path) -> io::Result<()> {
+    let mut px = vec![0u8; BYTES as usize];
+    res.seek(SeekFrom::Start(offset))?;
+    res.read_exact(&mut px)?;
+    // Unity stores rows bottom-up.
+    let row = (SIZE * 4) as usize;
+    let flipped: Vec<u8> = px.chunks_exact(row).rev().flatten().copied().collect();
+    let mut enc = png::Encoder::new(File::create(path)?, SIZE, SIZE);
+    enc.set_color(png::ColorType::Rgba);
+    enc.set_depth(png::BitDepth::Eight);
+    enc.write_header()?.write_image_data(&flipped)?;
     Ok(())
 }
 
 /// Name and `.resS` offset of every wanted 256x256 RGBA32 texture in a
 /// format-22 serialized file without type trees (what the game ships).
-fn find_textures(f: &[u8]) -> io::Result<Vec<(String, u64)>> {
+fn find_textures(f: &[u8], want: impl Fn(&str) -> bool) -> io::Result<Vec<(String, u64)>> {
     let be32 = |o: usize| -> io::Result<u32> { Ok(u32::from_be_bytes(get(f, o)?)) };
     let be64 = |o: usize| -> io::Result<u64> { Ok(u64::from_be_bytes(get(f, o)?)) };
     if be32(8)? != 22 {
@@ -120,7 +148,7 @@ fn find_textures(f: &[u8]) -> io::Result<Vec<(String, u64)>> {
         let Some(name) = obj.get(4..4 + name_len).and_then(|n| std::str::from_utf8(n).ok()) else {
             continue;
         };
-        if !SPRITES.iter().any(|(n, _)| *n == name) {
+        if !want(name) {
             continue;
         }
         if !is_rgba32_256(obj) {
@@ -205,5 +233,9 @@ mod tests {
         for (_, file) in super::SPRITES {
             assert!(out.join(format!("{file}.png")).exists(), "{file} missing");
         }
+        // bongo art is only in the game
+        let p = super::item(&out, &install, "DefaultBongoLeft").unwrap();
+        assert!(p.ends_with("art/items/DefaultBongoLeft.png"));
+        assert!(super::item(&out, &install, "../x").is_err());
     }
 }

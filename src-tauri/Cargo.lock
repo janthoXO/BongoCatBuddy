@@ -189,6 +189,7 @@ dependencies = [
 name = "bongo-cat-buddy"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "log",
  "objc2",
  "objc2-app-kit",

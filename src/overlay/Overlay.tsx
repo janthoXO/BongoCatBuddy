@@ -2,23 +2,22 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { availableMonitors, getCurrentWindow, primaryMonitor } from "@tauri-apps/api/window";
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { Heart, Menu, MessageCircle, PawPrint } from "lucide-react";
-import { useItems, CHEST_TOKEN, EMOTE_CHEST_TOKEN, iconUrl, QUALITY_COLORS, type Item } from "@/lib/items";
+import { useItems, COSMETICS, isCosmetic, CHEST_TOKEN, EMOTE_CHEST_TOKEN, iconUrl, QUALITY_COLORS, type Item } from "@/lib/items";
 import { MAX_WHEEL_EMOTES, usePrefs, type Prefs } from "@/lib/prefs";
 import Chest from "./Chest";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { CatFigure, FIGURE_H, FIGURE_W } from "@/components/CatFigure";
+import { CatFigure, FIGURE_W, figureH } from "@/components/CatFigure";
 import { EmoteParticle } from "@/components/EmoteParticle";
-import { CH, lobbySend, MAX_SPEECH, onLobbyMsg, ordered, remoteLayout, useLobby } from "@/lib/lobby";
+import { CH, lobbySend, MAX_SPEECH, onLobbyMsg, ordered, outfitOf, remoteLayout, useLobby, type Member } from "@/lib/lobby";
 import { RemoteCat } from "./RemoteCat";
 import { maskOf, onMask } from "@/lib/mask";
 
 const UNIT = 1.25; // px per unit at catScale 1
 const HIT_MS = 100;
 
-// Cat box in units = the figure (see CatFigure).
+// Cat box in units = the figure (see CatFigure); taller with bongos.
 const BOX_W = FIGURE_W;
-const BOX_H = FIGURE_H;
 // Fixed px (not scaled) around the cat box.
 const SIDE = 30; // each side margin: room for the score row with its chests and buttons
 const TOP = 0; // nothing reserved above the box: the popup and emote bar overlap its empty hat area
@@ -26,10 +25,10 @@ const ART_END = 14; // units: the cat art ends this far above the figure box; th
 const WHEEL_W = 8 * 24 + 7 * 2 + 4; // widest emote bar: 8 emotes
 const BOTTOM = 52; // score row + notice / chat input
 
-export const layout = (scale: number) => {
+export const layout = (scale: number, bongos = false) => {
   const u = UNIT * scale;
   const boxW = BOX_W * u;
-  const boxH = BOX_H * u;
+  const boxH = figureH(bongos) * u;
   return {
     u, boxW, boxH,
     w: Math.ceil(Math.max(boxW + 2 * SIDE, WHEEL_W)),
@@ -191,8 +190,15 @@ export default function Overlay() {
   };
   const skin = owned(prefs.equipped.skin);
   const hatItem = owned(prefs.equipped.hat);
+  const bongos = owned(prefs.equipped.bongos);
+  // no emotes picked in the inventory: no emote bar
+  const wheelItems = prefs.emotes
+    .map((id) => owned(id))
+    .filter((i): i is Item => !!i)
+    .slice(0, MAX_WHEEL_EMOTES);
+  const wheelKey = wheelItems.map((i) => i.id).join();
 
-  const L = layout(prefs.catScale);
+  const L = layout(prefs.catScale, !!bongos);
 
   useEffect(() => {
     (async () => {
@@ -224,7 +230,10 @@ export default function Overlay() {
   }, [screen]);
 
   const S = screen ?? { x: 0, y: 0, w: innerWidth, h: innerHeight, top: 0 };
+  // Without bongos: where feet are, so cats line up by their bodies; bongos hang below.
   const R = remoteLayout(prefs.catScale);
+  const L0 = layout(prefs.catScale);
+  const remote = (m: Member) => remoteLayout(prefs.catScale, !!outfitOf(m, catalog).bongos);
   const clamp = ([x, y]: Pos, w: number, h: number): Pos => [
     Math.max(0, Math.min(x, S.w - w)),
     Math.max(S.top, Math.min(y, S.h - h)),
@@ -241,20 +250,20 @@ export default function Overlay() {
   // shows is measured after rendering (`occ`); until then the whole box counts.
   const spots = lineSpots(
     prefs.catLayout === "column", { x: me[0], y: me[1], w: L.w, h: L.h }, occ.me ?? { x: 0, y: 0, w: L.w, h: L.h },
-    me[1] + TOP + L.boxH - 14 * L.u, others.map((m) => occ[m.id] ?? { x: 0, y: 0, w: R.w, h: R.h }), R.w, R.top + R.figH - 14 * R.u, S,
+    me[1] + TOP + L0.boxH - 14 * L.u, others.map((m) => occ[m.id] ?? { x: 0, y: 0, w: R.w, h: remote(m).h }), R.w, R.top + R.figH - 14 * R.u, S,
   );
   const free = prefs.catLayout === "free";
-  const otherBase = (id: string, i: number): Pos => clamp(free ? (prefs.catPos[id] ?? spots[i]) : spots[i], R.w, R.h);
   const placed = others.map((m, i) => {
-    const base = otherBase(m.id, i);
-    return { m, base, at: at(m.id, base) };
+    const r = remote(m);
+    const base = clamp(free ? (prefs.catPos[m.id] ?? spots[i]) : spots[i], r.w, r.h);
+    const fig: Rect = { x: (r.w - r.figW) / 2, y: r.top, w: r.figW, h: r.figH };
+    return { m, r, fig, base, at: at(m.id, base) };
   });
   // where the cat art sits inside each box, and every cat on screen (snap targets)
   const myFig: Rect = { x: (L.w - L.boxW) / 2, y: TOP, w: L.boxW, h: L.boxH };
-  const remoteFig: Rect = { x: (R.w - R.figW) / 2, y: R.top, w: R.figW, h: R.figH };
   const figs = [
     { id: "me", ...myFig, x: me[0] + myFig.x, y: me[1] + myFig.y },
-    ...placed.map((o) => ({ id: o.m.id, ...remoteFig, x: o.at[0] + remoteFig.x, y: o.at[1] + remoteFig.y })),
+    ...placed.map((o) => ({ id: o.m.id, ...o.fig, x: o.at[0] + o.fig.x, y: o.at[1] + o.fig.y })),
   ];
 
   // The window covers just the cats. Moving its left/top edge makes the cats jump for a frame
@@ -263,7 +272,7 @@ export default function Overlay() {
   // and the drag happens inside it, so a row or column can re-flow live (a native drag keeps the
   // window's size and would cut off cats that move to the other side).
   const tight = grow(
-    placed.reduce((r, o) => union(r, { x: o.at[0], y: o.at[1], w: R.w, h: R.h }), { x: me[0], y: me[1], w: L.w, h: L.h }),
+    placed.reduce((r, o) => union(r, { x: o.at[0], y: o.at[1], w: o.r.w, h: o.r.h }), { x: me[0], y: me[1], w: L.w, h: L.h }),
     PAD,
   );
   const fit = (r: Rect): Rect => {
@@ -382,11 +391,14 @@ export default function Overlay() {
     const data = {
       hat: String(hatItem?.id ?? -1),
       skin: String(skin?.id ?? -1),
+      bongos: String(bongos?.id ?? -1),
+      // the game only shows emotes (and outfit items) it can check we own, see `lobby::proof`
+      item_proof_emotes: wheelItems.filter((i) => i.slot === "emote").map((i) => i.id).join(","),
       chest_ready: String(chestReady.cosmetic),
       emote_chest_ready: String(chestReady.emote),
     };
     invoke("lobby_set_me", { data }).catch(() => {});
-  }, [catalog, hatItem?.id, skin?.id, chestReady]);
+  }, [catalog, hatItem?.id, skin?.id, bongos?.id, wheelKey, chestReady]);
   useEffect(() => {
     if (prefs.joinLastLobby && prefs.lastLobby)
       invoke("lobby_join_id", { id: prefs.lastLobby }).catch(() => update({ lastLobby: undefined }));
@@ -433,7 +445,7 @@ export default function Overlay() {
   }, [prefs.ignoreMouse]);
 
   // Random outfit, like the game's hat randomizer: every N minutes another owned, not hidden
-  // hat and skin (only favorites if set). Reads the latest prefs/catalog so they don't restart the timer.
+  // hat, skin and bongos (only favorites if set). Reads the latest prefs/catalog so they don't restart the timer.
   const outfit = useRef({ prefs, catalog });
   outfit.current = { prefs, catalog };
   useEffect(() => {
@@ -442,7 +454,7 @@ export default function Overlay() {
       const { prefs: p, catalog: c } = outfit.current;
       if (!c) return;
       const equipped = { ...p.equipped };
-      for (const slot of ["hat", "skin"] as const) {
+      for (const slot of COSMETICS) {
         const pool = [...c.values()].filter(
           (i) => i.slot === slot && i.qty > 0 && i.id !== p.equipped[slot] && !p.hidden.includes(i.id) && (!p.randomFavorites || p.favorites.includes(i.id)),
         );
@@ -453,35 +465,37 @@ export default function Overlay() {
     return () => clearInterval(t);
   }, [prefs.randomOutfit]);
 
-  // The game keeps its outfit in its own prefs; we share it. Once Steam is up (catalog), take the
-  // game's when it changed since we last synced (worn in the game meanwhile), else it gets ours.
-  // Game not installed: Err, ours stays local only. Checked again on every start.
+  // The game keeps its outfit in its own prefs (equipped ids); we share it. Once Steam is up
+  // (catalog), take the game's when it changed since we last synced (worn in the game meanwhile),
+  // else it gets ours. Game not installed: Err, ours stays local only. Checked again on every start.
   const [gameSync, setGameSync] = useState(false);
   const askedGame = useRef(false);
+  const same = (a?: number[], b?: number[]) => !!a && !!b && a.join() === b.join();
   useEffect(() => {
     if (!catalog || askedGame.current) return;
     askedGame.current = true;
-    invoke<[number, number] | null>("game_outfit")
-      .then((g) => {
-        const last = outfit.current.prefs.gameOutfit;
-        if (g && !(last && last[0] === g[0] && last[1] === g[1])) {
+    invoke<number[] | null>("game_outfit")
+      .then((ids) => {
+        const g = ids && [...new Set(ids)].sort((a, b) => a - b);
+        if (g && !same(g, outfit.current.prefs.gameOutfit)) {
           const equipped: Prefs["equipped"] = {};
-          if (g[0] >= 0) equipped.hat = g[0];
-          if (g[1] >= 0) equipped.skin = g[1];
+          for (const id of g) {
+            const slot = catalog.get(id)?.slot ?? null;
+            if (isCosmetic(slot)) equipped[slot] = id;
+          }
           update({ equipped, gameOutfit: g });
         }
         setGameSync(true);
       })
       .catch(() => {});
   }, [catalog]);
-  const wear: [number, number] = [prefs.equipped.hat ?? -1, prefs.equipped.skin ?? -1];
+  const wear = COSMETICS.flatMap((s) => prefs.equipped[s] ?? []).sort((a, b) => a - b);
   useEffect(() => {
-    const last = prefs.gameOutfit;
-    if (!gameSync || (last && last[0] === wear[0] && last[1] === wear[1])) return;
-    invoke("set_game_outfit", { hat: wear[0], skin: wear[1] })
+    if (!gameSync || same(wear, prefs.gameOutfit)) return;
+    invoke("set_game_outfit", { ids: wear })
       .then(() => update({ gameOutfit: wear }))
       .catch(() => {});
-  }, [gameSync, ...wear]);
+  }, [gameSync, wear.join()]);
 
   useEffect(() => {
     invoke<Score | null>("get_score").then(setScore).catch(() => {});
@@ -517,7 +531,7 @@ export default function Overlay() {
     setQueue((q) => [...q, { k: ++seq.current, id }]);
     void lobbySend(CH.item, String(id));
     const it = catalog?.get(id);
-    if (prefs.autoEquipDrops && (it?.slot === "hat" || it?.slot === "skin"))
+    if (prefs.autoEquipDrops && it && isCosmetic(it.slot))
       update({ equipped: { ...prefs.equipped, [it.slot]: id } });
   };
   const head = queue[0];
@@ -528,11 +542,6 @@ export default function Overlay() {
   }, [head?.k]);
   const won = head && (catalog?.get(head.id) ?? null);
 
-  // no emotes picked in the inventory: no emote bar
-  const wheelItems = prefs.emotes
-    .map((id) => owned(id))
-    .filter((i): i is Item => !!i)
-    .slice(0, MAX_WHEEL_EMOTES);
   const useEmote = (item: Item) => {
     const k = ++seq.current;
     setParticles((p) => [...p, { k, item }]);
@@ -557,17 +566,17 @@ export default function Overlay() {
 
   return (
     <main className="relative h-svh w-svw overflow-hidden">
-      {placed.map(({ m, base, at: [x, y] }) => (
+      {placed.map(({ m, r, fig, base, at: [x, y] }) => (
         <RemoteCat
           key={m.id}
           member={m}
           catalog={catalog}
           prefs={prefs}
           hovered={hover === m.id}
-          chestsRight={x + R.w / 2 < S.w / 2}
+          chestsRight={x + r.w / 2 < S.w / 2}
           x={x - ox}
           y={y - oy}
-          drag={free ? { onPointerDown: startDrag(m.id, base, R.w, R.h, remoteFig), wasDragged: () => dragged.current } : undefined}
+          drag={free ? { onPointerDown: startDrag(m.id, base, r.w, r.h, fig), wasDragged: () => dragged.current } : undefined}
         />
       ))}
       <div data-hit="me" className="absolute" style={{ left: me[0] - ox, top: me[1] - oy, width: L.w, height: L.h }}>
@@ -638,6 +647,7 @@ export default function Overlay() {
               unit={L.u}
               skin={skin}
               hat={hatItem}
+              bongos={bongos}
               left={left}
               right={right}
               flip={prefs.flip}

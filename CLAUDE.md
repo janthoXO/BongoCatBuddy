@@ -30,6 +30,7 @@ There is no lint script and no frontend test suite. Version lives in `package.js
 - Tauri sync commands run on the main thread. Never hold a mutex across window getters or setters, because that deadlocks. `update_hit` copies state out of the lock first.
 - The overlay window is click-through and only as big as the bounding box around the cats. Hit areas are `[data-hit]` rects reported through `set_hit_rects`. CSS `:hover` does not work, so use the `hover` event from Rust.
 - Lobby members are polled every 500 ms on purpose, because the steamworks 0.13 `LobbyChatUpdate` callback panics.
+- Need to know how the real game does something? `scripts/decompile-game.sh` decompiles the installed game into `decompiled/` (Docker, see "Reading the game" in README_DEV.md). Grep there instead of guessing.
 - Debug builds expose a dev driver on `127.0.0.1:7311` that runs JS in a window, so you can inspect the running app:
   `printf 'main\treturn document.title' | nc 127.0.0.1 7311`
 

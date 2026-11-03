@@ -98,7 +98,7 @@ export function Settings() {
           <Toggle label="Flip" checked={prefs.flip} onChange={set("flip")} />
           <Toggle label="Lock position" checked={prefs.lockPosition} onChange={set("lockPosition")} />
           <Toggle label="Count mouse clicks" checked={!prefs.ignoreMouse} onChange={(v) => update({ ignoreMouse: !v })} />
-          <Toggle label="Wear new hats and skins" checked={prefs.autoEquipDrops} onChange={set("autoEquipDrops")} />
+          <Toggle label="Wear new hats, skins and bongos" checked={prefs.autoEquipDrops} onChange={set("autoEquipDrops")} />
           <Row label="Random outfit">
             <Select items={OUTFIT_EVERY} value={String(prefs.randomOutfit)} onValueChange={(v) => update({ randomOutfit: Number(v) })}>
               <SelectTrigger size="sm" aria-label="Random outfit" className="border-0 bg-muted dark:bg-muted">

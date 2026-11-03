@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Gift, Heart, Smile } from "lucide-react";
 import { iconUrl, QUALITY_COLORS, CHEST_PRICE, type Item } from "@/lib/items";
 import type { Prefs } from "@/lib/prefs";
-import { CH, MAX_SPEECH, lobbySend, onLobbyMsg, remoteLayout, type Member } from "@/lib/lobby";
+import { CH, MAX_SPEECH, lobbySend, onLobbyMsg, outfitOf, remoteLayout, type Member } from "@/lib/lobby";
 import { CatFigure } from "@/components/CatFigure";
 import { EmoteParticle } from "@/components/EmoteParticle";
 
@@ -51,7 +51,8 @@ export function RemoteCat({
   const live = useRef({ prefs, catalog });
   live.current = { prefs, catalog };
 
-  const L = remoteLayout(prefs.catScale);
+  const outfit = outfitOf(member, catalog);
+  const L = remoteLayout(prefs.catScale, !!outfit.bongos);
 
   const burst = () => {
     const n = 1 + Math.floor(Math.random() * 3);
@@ -119,7 +120,6 @@ export function RemoteCat({
     }));
   }, [member?.chest_ready, member?.emote_chest_ready]);
 
-  const item = (n: number | null) => (n === null ? undefined : catalog?.get(n));
   const won = head && (catalog?.get(head.id) ?? null);
 
   const gift = async (e: React.MouseEvent, kind: Kind) => {
@@ -201,8 +201,7 @@ export function RemoteCat({
         <div ref={squishEl} style={{ transformOrigin: "bottom" }}>
           <CatFigure
             unit={L.u}
-            skin={item(member.skin)}
-            hat={item(member.hat)}
+            {...outfit}
             left={left}
             right={right}
           />

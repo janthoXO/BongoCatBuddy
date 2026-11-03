@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { FIGURE_H, FIGURE_W } from "@/components/CatFigure";
+import { FIGURE_W, figureH } from "@/components/CatFigure";
+import { COSMETICS, type Cosmetic, type Item } from "@/lib/items";
 
 /** Lobby member as Rust reports it (see `lobby::Member`). Steam ids are strings (u64). */
 export type Member = {
@@ -9,6 +10,7 @@ export type Member = {
   name: string;
   hat: number | null;
   skin: number | null;
+  bongos: number | null;
   chest_ready: boolean;
   emote_chest_ready: boolean;
 };
@@ -74,11 +76,21 @@ export const onLobbyMsg = (cb: (m: LobbyMsg) => void) => listen<LobbyMsg>("lobby
 export const lobbySend = (channel: number, message: string) =>
   invoke<boolean>("lobby_send", { channel, message }).catch(() => false);
 
-/** Size of a remote cat window: the cat figure plus room for a speech bubble on top and a name tag below. */
-export const remoteLayout = (scale: number) => {
+/** What a member wears, by slot; ids that aren't an item of that slot are dropped, like the game does. */
+export function outfitOf(m: Member, catalog: Map<number, Item> | null): Partial<Record<Cosmetic, Item>> {
+  const out: Partial<Record<Cosmetic, Item>> = {};
+  for (const s of COSMETICS) {
+    const it = m[s] === null ? undefined : catalog?.get(m[s]);
+    if (it?.slot === s) out[s] = it;
+  }
+  return out;
+}
+
+/** Size of a remote cat window: the cat figure (with or without bongos) plus room for a speech bubble on top and a name tag below. */
+export const remoteLayout = (scale: number, bongos = false) => {
   const u = 1.25 * scale;
   const figW = FIGURE_W * u;
-  const figH = FIGURE_H * u;
+  const figH = figureH(bongos) * u;
   const top = 44; // speech bubble / item popup
   // The sprites end ~14 units above the figure box, so the name tag + gift chests row tucks up into it.
   const bottom = 40 - 14 * u;

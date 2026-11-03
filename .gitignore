@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Decompiled game (scripts/decompile-game.sh)
+decompiled

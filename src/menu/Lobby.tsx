@@ -326,6 +326,7 @@ function Joined({ lobby, friends }: { lobby: LobbyState; friends: ReactNode }) {
         {m.id === lobby.me && <Badge>You</Badge>}
         {icon(m.hat)}
         {icon(m.skin)}
+        {icon(m.bongos)}
         {(m.chest_ready || m.emote_chest_ready) && <GiftIcon className="size-4 text-primary" aria-label="Chest ready" />}
         <span className="flex-1" />
         {other && (

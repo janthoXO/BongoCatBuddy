@@ -31,6 +31,7 @@ tauri-plugin-autostart = "2.7.0"
 ureq = "3"
 tauri-plugin-log = "2.10.1"
 log = "0.4.34"
+base64 = "0.22"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # turn the windows into panels, so they show over fullscreen apps
