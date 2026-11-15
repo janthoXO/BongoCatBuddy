@@ -259,9 +259,15 @@ fn open_menu(app: AppHandle) -> Result<(), String> {
 }
 
 /// Opens a chest ("cosmetic" or "emote") for CHEST_PRICE taps, or for free when another
-/// player gifted it (they paid). Returns the item won.
+/// player gifted it (they paid). Returns the item won; `fresh` = we didn't own one before.
+#[derive(Serialize)]
+struct Won {
+    id: Def,
+    fresh: bool,
+}
+
 #[tauri::command]
-async fn open_chest(app: AppHandle, kind: String, gift: Option<bool>) -> Result<Def, String> {
+async fn open_chest(app: AppHandle, kind: String, gift: Option<bool>) -> Result<Won, String> {
     let gift = gift.unwrap_or(false);
     blocking(app, move |app, sh| {
         let (recipe, token) = match kind.as_str() {
@@ -290,7 +296,8 @@ async fn open_chest(app: AppHandle, kind: String, gift: Option<bool>) -> Result<
             spend(app, sh, CHEST_PRICE);
         }
         bump_stat(sh, "TotalItems");
-        Ok(won)
+        // `stacks` is from before the exchange (the inventory event already went out, so the UI can't tell)
+        Ok(Won { id: won, fresh: !stacks.iter().any(|s| s.def == won && s.qty > 0) })
     })
     .await
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 
 /** Raw item definition as Steam publishes it (see Rust `ItemDef`). */
 type RawDef = { id: number; name: string; kind: string; tags: string; name_color: string };
@@ -100,4 +100,29 @@ export function useItems() {
       owned: owned ? [...catalog.values()].filter((i) => i.qty > 0) : null,
     };
   }, [defs, owned]);
+}
+
+const FOCUS = "focus-item";
+/** Opens the menu on the Items tab with item `id` selected. The menu window may not exist yet, so the id also waits in localStorage. */
+export function showItem(id: number) {
+  try {
+    localStorage.setItem(FOCUS, String(id));
+  } catch {
+    // no storage (prefs wouldn't work either): nothing to focus
+  }
+  void emit(FOCUS, id).then(() => invoke("open_menu")).catch(() => {});
+}
+/** Calls `cb` with each item to show (see `showItem`): one waiting from before this window, then each new one. */
+export function onShowItem(cb: (id: number) => void) {
+  const take = () => {
+    try {
+      const v = localStorage.getItem(FOCUS);
+      localStorage.removeItem(FOCUS);
+      if (v) cb(Number(v));
+    } catch {
+      // ignore
+    }
+  };
+  take();
+  return listen(FOCUS, take);
 }

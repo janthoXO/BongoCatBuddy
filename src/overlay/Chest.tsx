@@ -8,15 +8,19 @@ import { CHEST_PRICE } from "@/lib/items";
  * the catalog is known).
  * When `gift` changes, another player paid for this chest: it opens for free if it is ready.
  */
+export type Won = { id: number; fresh: boolean };
+
+/** `compact`: invisible (the bar it hangs off is collapsed, see `CollapsedTag`) but still there, so the layout stays put. */
 export default function Chest({
-  kind, tokens, score, onWon, onReady, gift,
+  kind, tokens, score, onWon, onReady, gift, compact,
 }: {
   kind: "cosmetic" | "emote";
   tokens: number | null;
   score: number | null;
-  onWon: (id: number) => void;
+  onWon: (won: Won) => void;
   onReady: (ready: boolean) => void;
   gift: number;
+  compact: boolean;
 }) {
   const ready = (tokens ?? 0) > 0;
   const [busy, setBusy] = useState(false);
@@ -31,8 +35,7 @@ export default function Chest({
   const open = async (gift: boolean) => {
     setBusy(true);
     try {
-      const id = await invoke<number>("open_chest", { kind, gift });
-      onWon(id);
+      onWon(await invoke<Won>("open_chest", { kind, gift }));
       setFx((n) => n + 1);
       setTimeout(() => setFx(0), 1200);
     } catch (e) {
@@ -73,7 +76,9 @@ export default function Chest({
           type="button"
           onClick={click}
           title={title}
-          className={`pill flex size-6 items-center justify-center ${afford ? "" : "opacity-50"} ${shake ? "chest-shake" : ""} ${fx ? "chest-pop" : ""}`}
+          className={`pill flex size-6 items-center justify-center transition-opacity ${
+            compact && !busy && !fx && !err ? "opacity-0" : afford ? "" : "opacity-50"
+          } ${shake ? "chest-shake" : ""} ${fx ? "chest-pop" : ""}`}
         >
           {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Icon className="size-3.5 text-primary" />}
         </button>
@@ -91,3 +96,19 @@ export default function Chest({
     </div>
   );
 }
+
+/**
+ * A hidden tag (score / name) collapsed to a tiny pill in its middle, with a dot per chest ready,
+ * by place: left = chest, right = emote chest. `show` false: faded out (hovered, the tag shows).
+ */
+export const CollapsedTag = ({ chests, show }: { chests: [boolean, boolean]; show: boolean }) => (
+  <span
+    className={`pill pointer-events-none absolute top-1/2 left-1/2 flex h-2.5 w-6 -translate-x-1/2 -translate-y-1/2 items-center gap-0.5 px-[3px] transition-opacity ${
+      show ? "" : "opacity-0"
+    }`}
+  >
+    {chests.map((on, i) => (
+      <span key={i} className={`size-1 rounded-full ${on ? "bg-primary" : ""}`} />
+    ))}
+  </span>
+);

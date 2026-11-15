@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BanIcon, CheckIcon, EyeIcon, EyeOffIcon, PackageOpenIcon, SearchIcon, StarIcon } from "lucide-react";
 import { CatFigure } from "@/components/CatFigure";
 import { Badge } from "@/components/ui/badge";
@@ -44,7 +44,8 @@ const toggle = (list: number[], id: number) =>
 const segment =
   "h-7 rounded-md px-3 text-sm aria-pressed:bg-card dark:aria-pressed:bg-white/15 aria-pressed:text-foreground aria-pressed:shadow-sm aria-pressed:hover:bg-card";
 
-export function Inventory() {
+/** `focus`: an item to select and scroll to (from the overlay), once per `k`. */
+export function Inventory({ focus }: { focus?: { id: number; k: number } | null }) {
   const { owned } = useItems();
   const [prefs, update] = usePrefs();
   const [category, setCategory] = useState<Category>("hat");
@@ -83,6 +84,21 @@ export function Inventory() {
     const n = noneFor(category);
     return n && list.length && !query.trim() && !qualities.length ? [n, ...list] : list;
   }, [visible, category, prefs.favorites, query, qualities]);
+
+  // The item may not be in `owned` yet (inventory event still on its way): wait for it.
+  const focused = useRef(0);
+  useEffect(() => {
+    const it = focus && focus.k !== focused.current ? owned?.find((i) => i.id === focus.id) : undefined;
+    const c = it && categoryOf(it);
+    if (!it || !c) return;
+    focused.current = focus!.k;
+    setCategory(c);
+    setQuery("");
+    setQualities([]);
+    if (prefs.hidden.includes(it.id)) setShowHidden(true);
+    setSelectedId(it.id);
+    setTimeout(() => document.querySelector(`[data-item="${it.id}"]`)?.scrollIntoView({ block: "nearest" }), 50);
+  }, [focus?.k, owned]);
 
   const selected = (selectedId === NONE ? noneFor(category) : owned?.find((i) => i.id === selectedId)) ?? null;
   const worn = (s: Cosmetic) => owned?.find((o) => o.id === prefs.equipped[s]);
@@ -212,6 +228,7 @@ export function Inventory() {
                   render={
                     <button
                       type="button"
+                      data-item={i.id}
                       onClick={() => setSelectedId(i.id)}
                       onDoubleClick={() => primary(i)}
                       style={tint(i.quality)}

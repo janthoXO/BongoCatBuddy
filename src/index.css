@@ -135,7 +135,7 @@
 @keyframes chest-shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
 @keyframes chest-pop { 40% { transform: scale(1.25); } }
 @keyframes chest-float { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-28px); opacity: 0; } }
-@keyframes popup { 0% { transform: translate(-50%, -12px); opacity: 0; } 8%, 92% { transform: translate(-50%, 0); opacity: 1; } 100% { transform: translate(-50%, 0); opacity: 0; } }
+@keyframes popup { 0% { transform: translateY(-12px); opacity: 0; } 8%, 92% { transform: none; opacity: 1; } 100% { transform: none; opacity: 0; } }
 @keyframes wheel-pop { from { transform: scale(0); opacity: 0; } 70% { transform: scale(1.15); } to { transform: scale(1); opacity: 1; } }
 @keyframes squish { 30% { transform: scale(1.15, 0.85); } 60% { transform: scale(0.9, 1.1); } }
 .emote-float { animation: emote-float 1.5s ease-out forwards; }
