@@ -10,7 +10,7 @@ export type Prefs = {
   flip: boolean;
   /** mouse clicks don't count as taps */
   ignoreMouse: boolean;
-  /** score only on hover; clicking our cat toggles it */
+  /** score only on hover; clicking the score toggles it */
   hideCounter: boolean;
   autoEquipDrops: boolean;
   /** minutes between random outfits (hat, skin, bongos), 0 = off; like the game's hat randomizer */
@@ -34,6 +34,8 @@ export type Prefs = {
   /** react to pats from others */
   receivePats: boolean;
   muteChats: boolean;
+  /** steam ids whose name tag always shows (else only on hover); clicking the tag toggles it */
+  shownNames: string[];
   /** steam ids whose cat is not shown */
   hiddenPlayers: string[];
   /** screen (monitor name) the overlay covers; the primary one when unset or gone */
@@ -75,6 +77,7 @@ const DEFAULTS: Prefs = {
   multiplayerPopups: true,
   receivePats: true,
   muteChats: false,
+  shownNames: [],
   hiddenPlayers: [],
   catPos: {},
   catOrder: [],

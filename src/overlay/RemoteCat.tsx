@@ -6,6 +6,7 @@ import type { Prefs } from "@/lib/prefs";
 import { CH, MAX_SPEECH, lobbySend, onLobbyMsg, outfitOf, remoteLayout, type Member } from "@/lib/lobby";
 import { CatFigure } from "@/components/CatFigure";
 import { EmoteParticle } from "@/components/EmoteParticle";
+import { CollapsedTag } from "./Chest";
 
 const HIT_MS = 100;
 type Kind = "cosmetic" | "emote";
@@ -15,6 +16,8 @@ export function RemoteCat({
   catalog,
   prefs,
   hovered,
+  pinned,
+  onToggleName,
   chestsRight,
   x,
   y,
@@ -25,6 +28,9 @@ export function RemoteCat({
   prefs: Prefs;
   /** the mouse is over this cat's box (CSS :hover is unreliable in the click-through overlay) */
   hovered: boolean;
+  /** the name tag always shows, else only on hover; clicking it calls `onToggleName` */
+  pinned: boolean;
+  onToggleName: () => void;
   /** chests hang off the name tag's right end (more screen room there), else its left */
   chestsRight: boolean;
   /** box position in px inside the overlay */
@@ -121,6 +127,10 @@ export function RemoteCat({
   }, [member?.chest_ready, member?.emote_chest_ready]);
 
   const won = head && (catalog?.get(head.id) ?? null);
+  // name on hover only: hovered it shows dimmed, so clicking it visibly changes something
+  const nameLook = pinned ? "" : hovered ? "opacity-60" : "opacity-0";
+  const compact = !pinned && !hovered;
+  const shown = (kind: Kind, ready: boolean) => ready && (!hidden[kind] || fx === kind);
 
   const gift = async (e: React.MouseEvent, kind: Kind) => {
     e.stopPropagation();
@@ -152,40 +162,45 @@ export function RemoteCat({
         void invoke("open_menu").catch(() => {});
       }}
     >
-      {speech && (
-        <p
-          key={speech.k}
-          className="pointer-events-none absolute left-1/2 top-1 z-20 line-clamp-2 -translate-x-1/2 break-words pill rounded-xl px-2 py-0.5 text-center text-xs leading-tight text-foreground"
-          style={{ maxWidth: L.w - 8 }}
-        >
-          {speech.text}
-        </p>
-      )}
-
-      {head && won !== undefined && (
-        <div
-          key={head.k}
-          className="popup pointer-events-none absolute left-1/2 top-1 z-20 flex items-center gap-2 pill overflow-hidden rounded-xl py-1 pl-3 pr-3"
-          style={{ maxWidth: L.w - 8 }}
-        >
-          <span
-            className="absolute inset-y-0 left-0 w-1.5"
-            style={{ background: won?.quality ? QUALITY_COLORS[won.quality] : "var(--border)" }}
-          />
-          {won ? <PopupIcon item={won} /> : null}
-          <div className="min-w-0 leading-tight">
-            <p className="truncate text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
-              {member.name} got
-            </p>
-            <p className="flex items-center gap-1 text-xs font-semibold text-foreground">
-              <span className="truncate">{won?.name ?? `#${head.id}`}</span>
-              {won?.quality && (
-                <span className="size-2 shrink-0 rounded-full" style={{ background: QUALITY_COLORS[won.quality] }} />
-              )}
-            </p>
+      {/* one pill on top: a new item, else what they said */}
+      <div
+        data-float
+        className="pointer-events-none absolute left-0 top-0 z-20 flex w-full flex-col items-center justify-end pb-1"
+        style={{ height: L.top }}
+      >
+        {head && won !== undefined ? (
+          <div
+            key={head.k}
+            className="popup pill relative flex items-center gap-2 overflow-hidden rounded-xl py-1 pl-3 pr-3"
+            style={{ maxWidth: L.w - 8 }}
+          >
+            <span
+              className="absolute inset-y-0 left-0 w-1.5"
+              style={{ background: won?.quality ? QUALITY_COLORS[won.quality] : "var(--border)" }}
+            />
+            {won ? <PopupIcon item={won} /> : null}
+            <div className="min-w-0 leading-tight">
+              <p className="truncate text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
+                {member.name} got
+              </p>
+              <p className="flex items-center gap-1 text-xs font-semibold text-foreground">
+                <span className="truncate">{won?.name ?? `#${head.id}`}</span>
+                {won?.quality && (
+                  <span className="size-2 shrink-0 rounded-full" style={{ background: QUALITY_COLORS[won.quality] }} />
+                )}
+              </p>
+            </div>
           </div>
-        </div>
-      )}
+        ) : speech ? (
+          <p
+            key={speech.k}
+            className="pill line-clamp-2 break-words rounded-xl px-2 py-0.5 text-center text-xs leading-tight text-foreground"
+            style={{ maxWidth: L.w - 8 }}
+          >
+            {speech.text}
+          </p>
+        ) : null}
+      </div>
 
       <div
         className="pointer-events-auto absolute"
@@ -228,14 +243,17 @@ export function RemoteCat({
         <div className="relative flex items-center">
           <div className={`absolute top-0 flex gap-1 ${chestsRight ? "left-full ml-1" : "right-full mr-1"}`}>
             {chests.map(([kind, ready]) =>
-              ready && (!hidden[kind] || fx === kind) ? (
+              !shown(kind, ready) ? null : (
                 <button
                   key={kind}
                   type="button"
                   title={`Open ${member.name}'s chest for ${CHEST_PRICE} taps`}
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={(e) => void gift(e, kind)}
-                  className="pill pointer-events-auto relative flex size-6 items-center justify-center"
+                  // collapsed: invisible but there, so the layout stays put
+                  className={`pill pointer-events-auto relative flex size-6 items-center justify-center transition-opacity ${
+                    compact && fx !== kind ? "opacity-0" : ""
+                  }`}
                 >
                   {kind === "emote" ? <Smile className="size-3.5 text-primary" /> : <Gift className="size-3.5 text-primary" />}
                   {fx === kind && (
@@ -244,17 +262,19 @@ export function RemoteCat({
                     </span>
                   )}
                 </button>
-              ) : null,
+              ),
             )}
           </div>
-          <span
-            data-solid
-            className={`pill max-w-28 truncate px-2 text-xs font-medium leading-6 ${
-              hovered ? "" : "opacity-0"
-            }`}
+          <button
+            type="button"
+            title={`Click to ${pinned ? "show only on hover" : "always show"}`}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={onToggleName}
+            className={`pill pointer-events-auto max-w-28 truncate px-2 text-xs font-medium leading-6 transition-opacity ${nameLook}`}
           >
             {member.name}
-          </span>
+          </button>
+          <CollapsedTag chests={[shown("cosmetic", member.chest_ready), shown("emote", member.emote_chest_ready)]} show={compact} />
         </div>
         {err && (
           <p
