@@ -61,7 +61,7 @@ Inventory: one slot each for hat, skin, bongos (`COSMETICS` in `items.ts`). Hats
 
 ## Look
 
-Minimal, system-like, not gamified. Tokens in `src/index.css`: system font, neutral grays, system blue. Light/dark follows the OS (`prefers-color-scheme`; the `dark:` variant is that media query, no class). Overlay chrome (score, name tags, bubbles, small buttons) uses the `pill` utility. Settings stay few: what can be a direct interaction is one (click score / a name tag = always / on hover only, dimmed while hovered in that mode so the click shows; click a cat = pat, right-click = menu, one pill on top for chat input, bubbles, item popups (ours click to the item in the menu) and the emote bar; chests shrink to dots while their bar is hidden, emote bar only when emotes are picked, chests only while you hold a token of that kind (Steam's playtime generator drops them)). Menu is a narrow tray panel, so UI must fit 380 px wide..
+Minimal, system-like, not gamified. Tokens in `src/index.css`: system font, neutral grays, system blue. Light/dark follows the OS (`prefers-color-scheme`; the `dark:` variant is that media query, no class). Overlay chrome (score, name tags, bubbles, small buttons) uses the `pill` utility. Settings stay few: what can be a direct interaction is one (click score / a name tag = always / on hover only, dimmed while hovered in that mode so the click shows; click a cat = pat, right-click = menu, the score / name tag morphs into chat input, bubbles and item popups (ours click to the item in the menu) and back, lying over the cat below meanwhile (tags stack by height on screen, higher above; `Tag.tsx`), hidden tags expand for that too; bubbles show 2 lines, longer ones autoscroll; a hovered tag (its own hover id `tag:<id>`) keeps its event and stops scrolling, the wheel scrolls it; emote bar on top while hovered; chests shrink to dots while their bar is hidden, emote bar only when emotes are picked, chests only while you hold a token of that kind (Steam's playtime generator drops them)). Menu is a narrow tray panel, so UI must fit 380 px wide..
 
 ## Menu panel
 
@@ -69,7 +69,7 @@ Minimal, system-like, not gamified. Tokens in `src/index.css`: system font, neut
 
 ## Overlay and input
 
-- One transparent always-on-top window `main`. Size = bounding box of all cats + 24 px padding (`PAD` in `Overlay.tsx`).
+- One transparent always-on-top window `main`. Size = bounding box of all cats + 24 px padding (`PAD` in `Overlay.tsx`), 60 px left and right (`PAD_X`: room for a grown tag pushing its chests / buttons out).
 - Click-through by default (`set_ignore_cursor_events`). Rust gets global mouse moves from rdev. Frontend reports with `set_hit_rects`: `[data-hit]` boxes (hover, ours first) and `solid` rects (`hold` = true while dragging). `update_hit` turns click-through off only when cursor is over a solid rect.
 - Solid = opaque pixels of each cat sprite + buttons/inputs. `src/lib/mask.ts`: sprite drawn to 32x32 canvas, alpha cells merged to rects, LRU cache of 64 masks, fetched on demand. Item CDN has no CORS, so Rust `fetch_art` (ureq, CDN urls only) gives the bytes. Mask not ready or unreadable = whole sprite square.
 - Events to frontend: `hover` (id of hovered rect or null; CSS `:hover` cannot see click-through window), `mouse-up` (left release while hovering; page never sees it during native drag).

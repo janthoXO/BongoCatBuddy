@@ -4,7 +4,8 @@ import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { Heart, Menu, MessageCircle, PawPrint } from "lucide-react";
 import { useItems, COSMETICS, isCosmetic, CHEST_TOKEN, EMOTE_CHEST_TOKEN, iconUrl, QUALITY_COLORS, showItem, type Item } from "@/lib/items";
 import { MAX_WHEEL_EMOTES, usePrefs, type Prefs } from "@/lib/prefs";
-import Chest, { CollapsedTag, type Won } from "./Chest";
+import Chest, { type Won } from "./Chest";
+import { Tag, TAG_CHANGED, type TagEvent } from "./Tag";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { CatFigure, FIGURE_W, figureH } from "@/components/CatFigure";
@@ -20,7 +21,7 @@ const HIT_MS = 100;
 const BOX_W = FIGURE_W;
 // Fixed px (not scaled) around the cat box.
 const SIDE = 30; // each side margin: room for the score row with its chests and buttons
-const TOP = 0; // nothing reserved above the box: the popup and emote bar overlap its empty hat area
+const TOP = 0; // nothing reserved above the box: the emote bar overlaps its empty hat area
 const ART_END = 14; // units: the cat art ends this far above the figure box; the score row tucks up into it
 const WHEEL_W = 8 * 24 + 7 * 2 + 4; // widest emote bar: 8 emotes
 const BOTTOM = 52; // score row + notice
@@ -41,13 +42,16 @@ type Pos = [number, number];
 type Rect = { x: number; y: number; w: number; h: number };
 
 const PAD = 24; // room around the cats for floating emotes and hearts
+// Room left and right of the cats: a tag grown to its widest pushes its chests / buttons out this
+// far (see `Tag`); growing the window to the left instead would make the cats jump.
+const PAD_X = 60;
 
 const union = (a: Rect, b: Rect): Rect => {
   const x = Math.min(a.x, b.x);
   const y = Math.min(a.y, b.y);
   return { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y };
 };
-const grow = (r: Rect, by: number): Rect => ({ x: r.x - by, y: r.y - by, w: r.w + 2 * by, h: r.h + 2 * by });
+const grow = (r: Rect, bx: number, by: number): Rect => ({ x: r.x - bx, y: r.y - by, w: r.w + 2 * bx, h: r.h + 2 * by });
 
 const SNAP = 8; // px: a dragged cat this close to a screen edge or another cat's line jumps onto it
 
@@ -123,8 +127,8 @@ function offsetIn(el: HTMLElement, box: HTMLElement): Rect {
 
 /**
  * What a cat box really shows, inside it: its sprites' opaque cells (each whole sprite until its
- * mask is in) and its bars (`data-solid`, buttons). Not the top pill (`data-float`: emote bar,
- * chat input, bubbles), which comes and goes; the layout must not move then.
+ * mask is in) and its bars (`data-solid`, buttons). Not what floats (`data-float`: the emote bar,
+ * a tag grown into an event, see `Tag`), which comes and goes; the layout must not move then.
  */
 function occupied(box: HTMLElement): Rect | null {
   const parts: Rect[] = [];
@@ -170,6 +174,8 @@ export default function Overlay() {
   const [drag, setDrag] = useState<{ id: string; dx: number; dy: number } | null>(null);
   // what each cat box really shows, by id (see `occupied`)
   const [occ, setOcc] = useState<Record<string, Rect>>({});
+  // lowest screen y any tag shows or grows to (see `Tag`)
+  const [reach, setReach] = useState(0);
   const dragged = useRef(false);
   const [particles, setParticles] = useState<Particle[]>([]);
   const [queue, setQueue] = useState<Popup[]>([]);
@@ -271,10 +277,9 @@ export default function Overlay() {
   // the whole window natively; with other cats the window first stretches over the screen once
   // and the drag happens inside it, so a row or column can re-flow live (a native drag keeps the
   // window's size and would cut off cats that move to the other side).
-  const tight = grow(
-    placed.reduce((r, o) => union(r, { x: o.at[0], y: o.at[1], w: o.r.w, h: o.r.h }), { x: me[0], y: me[1], w: L.w, h: L.h }),
-    PAD,
-  );
+  // A tag grown into an event may reach below the cats (`reach`, screen y): the window covers it too.
+  const cats = placed.reduce((r, o) => union(r, { x: o.at[0], y: o.at[1], w: o.r.w, h: o.r.h }), { x: me[0], y: me[1], w: L.w, h: L.h });
+  const tight = grow(union(cats, { ...cats, h: Math.max(cats.h, reach - cats.y) }), PAD_X, PAD);
   const fit = (r: Rect): Rect => {
     const x = Math.max(0, r.x);
     const y = Math.max(S.top, r.y);
@@ -352,18 +357,25 @@ export default function Overlay() {
   };
 
   // Tell Rust where the boxes are after every render that moved one. Rust hovers the first rect
-  // under the cursor, so ours goes first: other cats' empty bubble room may overlap it (column).
+  // under the cursor: tags first (see `Tag`), then ours, since other boxes may overlap it (column).
   // Clicks only land on what is solid: each sprite's opaque cells (its whole square until its
   // mask is in) and the buttons; the rest of a box only hovers, clicks there go through.
   const lastHit = useRef("");
   const [, setMasks] = useState(0);
   useEffect(() => onMask(() => setMasks((n) => n + 1)), []);
+  // a tag started or finished morphing: its rect changes without a render here
+  useEffect(() => {
+    const f = () => setMasks((n) => n + 1);
+    addEventListener(TAG_CHANGED, f);
+    return () => removeEventListener(TAG_CHANGED, f);
+  }, []);
   useLayoutEffect(() => {
+    // tags first (a grown one lies over other boxes), higher on screen first like they stack
+    const tag = (el: HTMLElement) => el.dataset.hit!.startsWith("tag:");
     const els = [...document.querySelectorAll<HTMLElement>("[data-hit]")];
-    const rects = [...els.filter((el) => el.dataset.hit === "me"), ...els.filter((el) => el.dataset.hit !== "me")].map((el) => {
-      const r = el.getBoundingClientRect();
-      return [el.dataset.hit, r.x, r.y, r.width, r.height];
-    });
+    const tags = els.filter(tag).map((el) => [el, el.getBoundingClientRect()] as const).sort((a, b) => a[1].y - b[1].y);
+    const boxes = [...els.filter((el) => el.dataset.hit === "me"), ...els.filter((el) => el.dataset.hit !== "me" && !tag(el))];
+    const rects = [...tags, ...boxes.map((el) => [el, el.getBoundingClientRect()] as const)].map(([el, r]) => [el.dataset.hit, r.x, r.y, r.width, r.height]);
     const solid = [...document.querySelectorAll<HTMLElement>("[data-hit] [data-figure] img, [data-hit] [data-solid], [data-hit] button, [data-hit] input")]
       .flatMap((el) => {
         const r = el.getBoundingClientRect();
@@ -373,11 +385,13 @@ export default function Overlay() {
         return m.map(([x, y, w, h]) => [r.x + (flip ? 1 - x - w : x) * r.width, r.y + y * r.height, w * r.width, h * r.height]);
       })
       .map((r) => r.map(Math.round));
-    const shown = Object.fromEntries(els.flatMap((el) => {
+    const shown = Object.fromEntries(boxes.flatMap((el) => {
       const r = occupied(el);
       return r ? [[el.dataset.hit!, r]] : [];
     }));
     if (JSON.stringify(shown) !== JSON.stringify(occ)) setOcc(shown);
+    const low = Math.ceil(oy + Math.max(0, ...[...document.querySelectorAll("[data-extent]")].map((el) => el.getBoundingClientRect().bottom)));
+    if (low !== reach) setReach(low);
     const json = JSON.stringify([rects, solid, !!drag]);
     if (json === lastHit.current) return;
     lastHit.current = json;
@@ -426,11 +440,6 @@ export default function Overlay() {
     });
     return () => void un.then((f) => f());
   }, []);
-  useEffect(() => {
-    if (!speech) return;
-    const id = setTimeout(() => setSpeech(null), 5000);
-    return () => clearTimeout(id);
-  }, [speech?.k]);
   const say = (text: string) => {
     setTyping(false);
     text = text.trim().slice(0, MAX_SPEECH);
@@ -534,11 +543,6 @@ export default function Overlay() {
       update({ equipped: { ...prefs.equipped, [it.slot]: id } });
   };
   const head = queue[0];
-  useEffect(() => {
-    if (!head) return;
-    const id = setTimeout(() => setQueue((q) => q.slice(1)), 4000);
-    return () => clearTimeout(id);
-  }, [head?.k]);
   const won = head && (catalog?.get(head.id) ?? null);
 
   const useEmote = (item: Item) => {
@@ -559,68 +563,40 @@ export default function Overlay() {
   const rowTop = TOP + L.boxH - ART_END * L.u + 2;
   const notice = flash ?? error;
   const openMenu = () => void invoke("open_menu").catch(() => {});
-  const hovered = hover === "me" || drag?.id === "me";
+  const hovered = hover === "me" || hover === "tag:me" || drag?.id === "me";
   const wheel = hovered && !drag;
   const showOnHover = hovered ? "" : "opacity-0";
-  // score on hover only: hovered it shows dimmed, so clicking it visibly changes something
-  const barLook = !prefs.hideCounter ? "" : hovered ? "opacity-60" : "opacity-0";
-  // The top pill, just above the visible art (hat or ears, see `occupied`), inside the window's
-  // padding; it grows up from there, over the hat when there is no room.
-  const islandTop = 2 - PAD;
-  const islandH = Math.max((occ.me?.y ?? TOP) - 4 - islandTop, 48);
-
-  return (
-    <main className="relative h-svh w-svw overflow-hidden">
-      {placed.map(({ m, r, fig, base, at: [x, y] }) => (
-        <RemoteCat
-          key={m.id}
-          member={m}
-          catalog={catalog}
-          prefs={prefs}
-          hovered={hover === m.id}
-          pinned={prefs.shownNames.includes(m.id)}
-          onToggleName={() =>
-            update({ shownNames: prefs.shownNames.includes(m.id) ? prefs.shownNames.filter((x) => x !== m.id) : [...prefs.shownNames, m.id] })
-          }
-          chestsRight={x + r.w / 2 < S.w / 2}
-          x={x - ox}
-          y={y - oy}
-          drag={free ? { onPointerDown: startDrag(m.id, base, r.w, r.h, fig), wasDragged: () => dragged.current } : undefined}
-        />
-      ))}
-      <div data-hit="me" className="absolute" style={{ left: me[0] - ox, top: me[1] - oy, width: L.w, height: L.h }}>
-
-        {/* one pill on top: typing, else a new item, else what we said, else (hovered) the emote bar */}
-        <div
-          data-float
-          className="pointer-events-none absolute left-0 z-20 flex w-full flex-col items-center justify-end"
-          style={{ top: islandTop, height: islandH }}
-        >
-          {typing ? (
-            <input
-              autoFocus
-              maxLength={MAX_SPEECH}
-              placeholder="Say something…"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") say(e.currentTarget.value);
-                if (e.key === "Escape") setTyping(false);
-              }}
-              onBlur={(e) => say(e.currentTarget.value)}
-              className="pill pointer-events-auto px-3 text-xs leading-6 outline-none"
-              style={{ width: L.w - 16 }}
-            />
-          ) : head && won !== undefined ? (
-            <button
-              key={head.k}
-              type="button"
-              title="Show in inventory"
-              onClick={() => {
-                showItem(head.id);
-                setQueue((q) => q.slice(1));
-              }}
-              className="popup pill pointer-events-auto relative flex items-center gap-2 overflow-hidden rounded-xl py-1 pl-3 pr-3 text-left"
-              style={{ maxWidth: L.w - 8 }}
-            >
+  // What the score tag turns into for a while: typing, else a new item, else what we said.
+  const event: TagEvent | null = typing
+    ? {
+        k: "typing",
+        node: (
+          <input
+            autoFocus
+            maxLength={MAX_SPEECH}
+            placeholder="Say something…"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") say(e.currentTarget.value);
+              if (e.key === "Escape") setTyping(false);
+            }}
+            onBlur={(e) => say(e.currentTarget.value)}
+            className="block bg-transparent px-3 text-xs leading-6 outline-none"
+            style={{ width: L.w - 16 }}
+          />
+        ),
+      }
+    : head && won !== undefined
+      ? {
+          k: head.k,
+          ms: 4000,
+          onDone: () => setQueue((q) => (q[0]?.k === head.k ? q.slice(1) : q)),
+          title: "Show in inventory",
+          onClick: () => {
+            showItem(head.id);
+            setQueue((q) => q.slice(1));
+          },
+          node: (
+            <div className="relative flex items-center gap-2 py-1 pl-3 pr-3 text-left">
               <span
                 className="absolute inset-y-0 left-0 w-1.5"
                 style={{ background: won?.quality ? QUALITY_COLORS[won.quality] : "var(--border)" }}
@@ -639,16 +615,106 @@ export default function Overlay() {
                   )}
                 </p>
               </div>
-            </button>
-          ) : speech ? (
-            <p
-              key={speech.k}
-              className="pill line-clamp-2 break-words rounded-xl px-2 py-0.5 text-center text-xs"
-              style={{ maxWidth: L.w - 8 }}
-            >
-              {speech.text}
-            </p>
-          ) : wheel && wheelItems.length > 0 ? (
+            </div>
+          ),
+        }
+      : speech
+        ? {
+            k: speech.k,
+            text: speech.text,
+            ms: 5000,
+            onDone: () => setSpeech((s) => (s?.k === speech.k ? null : s)),
+          }
+        : null;
+  // what hangs off the score tag: the chests toward more screen room, the hover buttons the other way
+  const chests = (
+    <>
+      <Chest
+        kind="cosmetic"
+        onReady={(r) => setChestReady((c) => (c.cosmetic === r ? c : { ...c, cosmetic: r }))}
+        gift={gift.cosmetic}
+        tokens={catalog ? (catalog.get(CHEST_TOKEN)?.qty ?? 0) : null}
+        score={score?.current ?? null}
+        onWon={onWon}
+        compact={prefs.hideCounter && !hovered}
+      />
+      <Chest
+        kind="emote"
+        onReady={(r) => setChestReady((c) => (c.emote === r ? c : { ...c, emote: r }))}
+        gift={gift.emote}
+        tokens={catalog ? (catalog.get(EMOTE_CHEST_TOKEN)?.qty ?? 0) : null}
+        score={score?.current ?? null}
+        onWon={onWon}
+        compact={prefs.hideCounter && !hovered}
+      />
+    </>
+  );
+  const buttons = (
+    <>
+      {lobby && (
+        <button
+          type="button"
+          title="Say something"
+          onClick={() => setTyping(true)}
+          className={`pill flex size-6 items-center justify-center transition-opacity ${showOnHover}`}
+        >
+          <MessageCircle className="size-3" />
+        </button>
+      )}
+      <button
+        type="button"
+        title="Menu"
+        onClick={openMenu}
+        className={`pill flex size-6 items-center justify-center transition-opacity ${showOnHover}`}
+      >
+        <Menu className="size-3" />
+      </button>
+    </>
+  );
+  const cx = me[0] - ox + L.w / 2;
+  const room = Math.min(cx, (win?.w ?? want.w) - cx);
+  // Tags stack by height on screen: a tag grown into an event lies over the cat below it.
+  const z = Object.fromEntries(
+    [["me", me[1]] as const, ...placed.map((o) => [o.m.id, o.at[1]] as const)]
+      .sort((a, b) => b[1] - a[1])
+      .map(([id], i) => [id, 40 + i]),
+  );
+  // The emote bar, just above the visible art (hat or ears, see `occupied`), inside the window's
+  // padding; it grows up from there, over the hat when there is no room.
+  const islandTop = 2 - PAD;
+  const islandH = Math.max((occ.me?.y ?? TOP) - 4 - islandTop, 48);
+
+  return (
+    <main className="relative h-svh w-svw overflow-hidden">
+      {placed.map(({ m, r, fig, base, at: [x, y] }) => (
+        <RemoteCat
+          key={m.id}
+          member={m}
+          catalog={catalog}
+          prefs={prefs}
+          hovered={hover === m.id || hover === `tag:${m.id}`}
+          tagHeld={hover === `tag:${m.id}`}
+          room={Math.min(x - ox + r.w / 2, (win?.w ?? want.w) - (x - ox + r.w / 2))}
+          pinned={prefs.shownNames.includes(m.id)}
+          onToggleName={() =>
+            update({ shownNames: prefs.shownNames.includes(m.id) ? prefs.shownNames.filter((x) => x !== m.id) : [...prefs.shownNames, m.id] })
+          }
+          chestsRight={x + r.w / 2 < S.w / 2}
+          z={z[m.id]}
+          x={x - ox}
+          y={y - oy}
+          drag={free ? { onPointerDown: startDrag(m.id, base, r.w, r.h, fig), wasDragged: () => dragged.current } : undefined}
+        />
+      ))}
+      <div data-hit="me" className="absolute" style={{ left: me[0] - ox, top: me[1] - oy, width: L.w, height: L.h }}>
+
+        {/* the emote bar on top while hovered; everything that happens shows in the score tag */}
+        <div
+          data-float
+          className="pointer-events-none absolute left-0 z-20 flex w-full flex-col items-center justify-end"
+          style={{ top: islandTop, height: islandH }}
+        >
+          {wheel && wheelItems.length > 0 ? (
             <div className="wheel-pop pill flex gap-0.5 p-0.5">
               {wheelItems.map((it) => (
                 <button
@@ -711,63 +777,30 @@ export default function Overlay() {
 
         <div
           className="absolute left-0 flex flex-col items-center gap-1"
-          style={{ top: rowTop, width: L.w }}
+          style={{ top: rowTop, width: L.w, zIndex: z.me }}
         >
           {/* score centered; ready chests hang off it toward more screen room, the hover buttons
               off the other end, so neither shifts it (the buttons stay mounted: the cat layout
               measures them, see `occupied`) */}
           <div className="relative flex h-6 items-center">
-            {/* hidden = invisible, not gone, so the chests next to it stay put */}
-            <button
-              type="button"
-              title={`${score ? `Lifetime: ${score.lifetime}\n` : ""}Click to ${prefs.hideCounter ? "always show" : "show only on hover"}`}
+            <Tag
+              rest={
+                <span className="flex items-center gap-1 px-2 text-sm font-medium leading-6 tabular-nums">
+                  <PawPrint className="size-3.5 text-muted-foreground" />
+                  {score ? score.current.toLocaleString("en-US").replace(/,/g, " ") : "…"}
+                </span>
+              }
+              look={!prefs.hideCounter ? "show" : hovered ? "dim" : "collapse"}
+              dots={[chestReady.cosmetic, chestReady.emote]}
+              event={event}
               onClick={toggleBar}
-              className={`pill flex items-center gap-1 px-2 text-sm font-medium leading-6 tabular-nums transition-opacity ${barLook}`}
-            >
-              <PawPrint className="size-3.5 text-muted-foreground" />
-              {score ? score.current.toLocaleString("en-US").replace(/,/g, " ") : "…"}
-            </button>
-            <CollapsedTag chests={[chestReady.cosmetic, chestReady.emote]} show={prefs.hideCounter && !hovered} />
-            <div className={`absolute top-0 flex gap-1 ${chestsRight ? "left-full ml-1" : "right-full mr-1"}`}>
-              <Chest
-                kind="cosmetic"
-                onReady={(r) => setChestReady((c) => (c.cosmetic === r ? c : { ...c, cosmetic: r }))}
-                gift={gift.cosmetic}
-                tokens={catalog ? (catalog.get(CHEST_TOKEN)?.qty ?? 0) : null}
-                score={score?.current ?? null}
-                onWon={onWon}
-                compact={prefs.hideCounter && !hovered}
-              />
-              <Chest
-                kind="emote"
-                onReady={(r) => setChestReady((c) => (c.emote === r ? c : { ...c, emote: r }))}
-                gift={gift.emote}
-                tokens={catalog ? (catalog.get(EMOTE_CHEST_TOKEN)?.qty ?? 0) : null}
-                score={score?.current ?? null}
-                onWon={onWon}
-                compact={prefs.hideCounter && !hovered}
-              />
-            </div>
-            <div className={`absolute top-0 flex gap-1 ${chestsRight ? "right-full mr-1" : "left-full ml-1"}`}>
-              {lobby && (
-                <button
-                  type="button"
-                  title="Say something"
-                  onClick={() => setTyping(true)}
-                  className={`pill flex size-6 items-center justify-center transition-opacity ${showOnHover}`}
-                >
-                  <MessageCircle className="size-3" />
-                </button>
-              )}
-              <button
-                type="button"
-                title="Menu"
-                onClick={openMenu}
-                className={`pill flex size-6 items-center justify-center transition-opacity ${showOnHover}`}
-              >
-                <Menu className="size-3" />
-              </button>
-            </div>
+              title={`${score ? `Lifetime: ${score.lifetime}\n` : ""}Click to ${prefs.hideCounter ? "always show" : "show only on hover"}`}
+              max={L.w - 8}
+              hit="tag:me"
+              held={hover === "tag:me"}
+              room={room}
+              sides={chestsRight ? [buttons, chests] : [chests, buttons]}
+            />
           </div>
           {notice && (
             <p

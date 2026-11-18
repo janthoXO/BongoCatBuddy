@@ -135,7 +135,6 @@
 @keyframes chest-shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
 @keyframes chest-pop { 40% { transform: scale(1.25); } }
 @keyframes chest-float { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-28px); opacity: 0; } }
-@keyframes popup { 0% { transform: translateY(-12px); opacity: 0; } 8%, 92% { transform: none; opacity: 1; } 100% { transform: none; opacity: 0; } }
 @keyframes wheel-pop { from { transform: scale(0); opacity: 0; } 70% { transform: scale(1.15); } to { transform: scale(1); opacity: 1; } }
 @keyframes squish { 30% { transform: scale(1.15, 0.85); } 60% { transform: scale(0.9, 1.1); } }
 .emote-float { animation: emote-float 1.5s ease-out forwards; }
@@ -143,6 +142,17 @@
 .chest-shake { animation: chest-shake 0.4s; }
 .chest-pop { animation: chest-pop 0.5s; }
 .chest-float { animation: chest-float 1s ease-out forwards; }
-.popup { animation: popup 4s ease-out both; }
 .wheel-pop { animation: wheel-pop 0.25s ease-out both; }
 .squish { animation: squish 0.7s ease-out; transform-origin: bottom; }
+/* The tag under a cat morphing into an event and back (Tag.tsx): the pill springs to its new size,
+   the old content fades out, the new fades in. */
+@keyframes tag-in { from { opacity: 0; filter: blur(4px); } }
+@keyframes tag-out { to { opacity: 0; filter: blur(4px); } }
+.tag { transition: width 0.35s cubic-bezier(0.3, 1.25, 0.5, 1), height 0.35s cubic-bezier(0.3, 1.25, 0.5, 1), margin-top 0.35s, border-radius 0.35s, opacity 0.2s; }
+.tag-side { transition: transform 0.35s cubic-bezier(0.3, 1.25, 0.5, 1); }
+.tag-in { animation: tag-in 0.25s 0.08s ease-out both; }
+.tag-out { animation: tag-out 0.15s ease-in both; }
+/* A bubble longer than its lines scrolls (Tag.tsx): no scrollbar, the cut lines fade at the edges. */
+.tag-scroll { scrollbar-width: none; }
+.tag-scroll::-webkit-scrollbar { display: none; }
+.tag-fade { mask-image: linear-gradient(transparent, #000 4px, #000 calc(100% - 4px), transparent); }
