@@ -1,7 +1,7 @@
 # Updated by .github/workflows/release.yml on every release.
 cask "bongocatbuddy" do
-  version "0.0.18"
-  sha256 "f3a00af3a49d472b46e49ac3e7a8c8e84abecd98f786fd3b6b8be3f2994aec5e"
+  version "0.0.19"
+  sha256 "22b298171466805834f8d862bee1e4fbff5ba626581bb626e18217efdf4ae521"
 
   url "https://github.com/janthoXO/BongoCatBuddy/releases/download/v#{version}/BongoCatBuddy_#{version}_aarch64.dmg"
   name "BongoCatBuddy"
