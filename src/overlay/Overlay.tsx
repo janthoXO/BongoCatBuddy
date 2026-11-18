@@ -4,7 +4,8 @@ import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { Heart, Menu, MessageCircle, PawPrint } from "lucide-react";
 import { useItems, COSMETICS, isCosmetic, CHEST_TOKEN, EMOTE_CHEST_TOKEN, iconUrl, QUALITY_COLORS, showItem, type Item } from "@/lib/items";
 import { MAX_WHEEL_EMOTES, usePrefs, type Prefs } from "@/lib/prefs";
-import Chest, { CollapsedTag, type Won } from "./Chest";
+import Chest, { type Won } from "./Chest";
+import { Tag, TAG_SETTLED, type TagEvent } from "./Tag";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { CatFigure, FIGURE_W, figureH } from "@/components/CatFigure";
@@ -20,7 +21,7 @@ const HIT_MS = 100;
 const BOX_W = FIGURE_W;
 // Fixed px (not scaled) around the cat box.
 const SIDE = 30; // each side margin: room for the score row with its chests and buttons
-const TOP = 0; // nothing reserved above the box: the popup and emote bar overlap its empty hat area
+const TOP = 0; // nothing reserved above the box: the emote bar overlaps its empty hat area
 const ART_END = 14; // units: the cat art ends this far above the figure box; the score row tucks up into it
 const WHEEL_W = 8 * 24 + 7 * 2 + 4; // widest emote bar: 8 emotes
 const BOTTOM = 52; // score row + notice
@@ -123,8 +124,8 @@ function offsetIn(el: HTMLElement, box: HTMLElement): Rect {
 
 /**
  * What a cat box really shows, inside it: its sprites' opaque cells (each whole sprite until its
- * mask is in) and its bars (`data-solid`, buttons). Not the top pill (`data-float`: emote bar,
- * chat input, bubbles), which comes and goes; the layout must not move then.
+ * mask is in) and its bars (`data-solid`, buttons). Not what floats (`data-float`: the emote bar,
+ * a tag grown into an event, see `Tag`), which comes and goes; the layout must not move then.
  */
 function occupied(box: HTMLElement): Rect | null {
   const parts: Rect[] = [];
@@ -358,6 +359,12 @@ export default function Overlay() {
   const lastHit = useRef("");
   const [, setMasks] = useState(0);
   useEffect(() => onMask(() => setMasks((n) => n + 1)), []);
+  // a tag finished morphing: its rect changed without a render
+  useEffect(() => {
+    const f = () => setMasks((n) => n + 1);
+    addEventListener(TAG_SETTLED, f);
+    return () => removeEventListener(TAG_SETTLED, f);
+  }, []);
   useLayoutEffect(() => {
     const els = [...document.querySelectorAll<HTMLElement>("[data-hit]")];
     const rects = [...els.filter((el) => el.dataset.hit === "me"), ...els.filter((el) => el.dataset.hit !== "me")].map((el) => {
@@ -562,65 +569,35 @@ export default function Overlay() {
   const hovered = hover === "me" || drag?.id === "me";
   const wheel = hovered && !drag;
   const showOnHover = hovered ? "" : "opacity-0";
-  // score on hover only: hovered it shows dimmed, so clicking it visibly changes something
-  const barLook = !prefs.hideCounter ? "" : hovered ? "opacity-60" : "opacity-0";
-  // The top pill, just above the visible art (hat or ears, see `occupied`), inside the window's
-  // padding; it grows up from there, over the hat when there is no room.
-  const islandTop = 2 - PAD;
-  const islandH = Math.max((occ.me?.y ?? TOP) - 4 - islandTop, 48);
-
-  return (
-    <main className="relative h-svh w-svw overflow-hidden">
-      {placed.map(({ m, r, fig, base, at: [x, y] }) => (
-        <RemoteCat
-          key={m.id}
-          member={m}
-          catalog={catalog}
-          prefs={prefs}
-          hovered={hover === m.id}
-          pinned={prefs.shownNames.includes(m.id)}
-          onToggleName={() =>
-            update({ shownNames: prefs.shownNames.includes(m.id) ? prefs.shownNames.filter((x) => x !== m.id) : [...prefs.shownNames, m.id] })
-          }
-          chestsRight={x + r.w / 2 < S.w / 2}
-          x={x - ox}
-          y={y - oy}
-          drag={free ? { onPointerDown: startDrag(m.id, base, r.w, r.h, fig), wasDragged: () => dragged.current } : undefined}
-        />
-      ))}
-      <div data-hit="me" className="absolute" style={{ left: me[0] - ox, top: me[1] - oy, width: L.w, height: L.h }}>
-
-        {/* one pill on top: typing, else a new item, else what we said, else (hovered) the emote bar */}
-        <div
-          data-float
-          className="pointer-events-none absolute left-0 z-20 flex w-full flex-col items-center justify-end"
-          style={{ top: islandTop, height: islandH }}
-        >
-          {typing ? (
-            <input
-              autoFocus
-              maxLength={MAX_SPEECH}
-              placeholder="Say something…"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") say(e.currentTarget.value);
-                if (e.key === "Escape") setTyping(false);
-              }}
-              onBlur={(e) => say(e.currentTarget.value)}
-              className="pill pointer-events-auto px-3 text-xs leading-6 outline-none"
-              style={{ width: L.w - 16 }}
-            />
-          ) : head && won !== undefined ? (
-            <button
-              key={head.k}
-              type="button"
-              title="Show in inventory"
-              onClick={() => {
-                showItem(head.id);
-                setQueue((q) => q.slice(1));
-              }}
-              className="popup pill pointer-events-auto relative flex items-center gap-2 overflow-hidden rounded-xl py-1 pl-3 pr-3 text-left"
-              style={{ maxWidth: L.w - 8 }}
-            >
+  // What the score tag turns into for a while: typing, else a new item, else what we said.
+  const event: TagEvent | null = typing
+    ? {
+        k: "typing",
+        node: (
+          <input
+            autoFocus
+            maxLength={MAX_SPEECH}
+            placeholder="Say something…"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") say(e.currentTarget.value);
+              if (e.key === "Escape") setTyping(false);
+            }}
+            onBlur={(e) => say(e.currentTarget.value)}
+            className="block bg-transparent px-3 text-xs leading-6 outline-none"
+            style={{ width: L.w - 16 }}
+          />
+        ),
+      }
+    : head && won !== undefined
+      ? {
+          k: head.k,
+          title: "Show in inventory",
+          onClick: () => {
+            showItem(head.id);
+            setQueue((q) => q.slice(1));
+          },
+          node: (
+            <div className="relative flex items-center gap-2 py-1 pl-3 pr-3 text-left">
               <span
                 className="absolute inset-y-0 left-0 w-1.5"
                 style={{ background: won?.quality ? QUALITY_COLORS[won.quality] : "var(--border)" }}
@@ -639,16 +616,55 @@ export default function Overlay() {
                   )}
                 </p>
               </div>
-            </button>
-          ) : speech ? (
-            <p
-              key={speech.k}
-              className="pill line-clamp-2 break-words rounded-xl px-2 py-0.5 text-center text-xs"
-              style={{ maxWidth: L.w - 8 }}
-            >
-              {speech.text}
-            </p>
-          ) : wheel && wheelItems.length > 0 ? (
+            </div>
+          ),
+        }
+      : speech
+        ? {
+            k: speech.k,
+            node: <div className="px-2.5 py-[5px]"><p className="line-clamp-2 break-words text-center text-xs leading-[14px]">{speech.text}</p></div>,
+          }
+        : null;
+  // Tags stack by height on screen: a tag grown into an event lies over the cat below it.
+  const z = Object.fromEntries(
+    [["me", me[1]] as const, ...placed.map((o) => [o.m.id, o.at[1]] as const)]
+      .sort((a, b) => b[1] - a[1])
+      .map(([id], i) => [id, 40 + i]),
+  );
+  // The emote bar, just above the visible art (hat or ears, see `occupied`), inside the window's
+  // padding; it grows up from there, over the hat when there is no room.
+  const islandTop = 2 - PAD;
+  const islandH = Math.max((occ.me?.y ?? TOP) - 4 - islandTop, 48);
+
+  return (
+    <main className="relative h-svh w-svw overflow-hidden">
+      {placed.map(({ m, r, fig, base, at: [x, y] }) => (
+        <RemoteCat
+          key={m.id}
+          member={m}
+          catalog={catalog}
+          prefs={prefs}
+          hovered={hover === m.id}
+          pinned={prefs.shownNames.includes(m.id)}
+          onToggleName={() =>
+            update({ shownNames: prefs.shownNames.includes(m.id) ? prefs.shownNames.filter((x) => x !== m.id) : [...prefs.shownNames, m.id] })
+          }
+          chestsRight={x + r.w / 2 < S.w / 2}
+          z={z[m.id]}
+          x={x - ox}
+          y={y - oy}
+          drag={free ? { onPointerDown: startDrag(m.id, base, r.w, r.h, fig), wasDragged: () => dragged.current } : undefined}
+        />
+      ))}
+      <div data-hit="me" className="absolute" style={{ left: me[0] - ox, top: me[1] - oy, width: L.w, height: L.h }}>
+
+        {/* the emote bar on top while hovered; everything that happens shows in the score tag */}
+        <div
+          data-float
+          className="pointer-events-none absolute left-0 z-20 flex w-full flex-col items-center justify-end"
+          style={{ top: islandTop, height: islandH }}
+        >
+          {wheel && wheelItems.length > 0 ? (
             <div className="wheel-pop pill flex gap-0.5 p-0.5">
               {wheelItems.map((it) => (
                 <button
@@ -711,23 +727,26 @@ export default function Overlay() {
 
         <div
           className="absolute left-0 flex flex-col items-center gap-1"
-          style={{ top: rowTop, width: L.w }}
+          style={{ top: rowTop, width: L.w, zIndex: z.me }}
         >
           {/* score centered; ready chests hang off it toward more screen room, the hover buttons
               off the other end, so neither shifts it (the buttons stay mounted: the cat layout
               measures them, see `occupied`) */}
           <div className="relative flex h-6 items-center">
-            {/* hidden = invisible, not gone, so the chests next to it stay put */}
-            <button
-              type="button"
-              title={`${score ? `Lifetime: ${score.lifetime}\n` : ""}Click to ${prefs.hideCounter ? "always show" : "show only on hover"}`}
+            <Tag
+              rest={
+                <span className="flex items-center gap-1 px-2 text-sm font-medium leading-6 tabular-nums">
+                  <PawPrint className="size-3.5 text-muted-foreground" />
+                  {score ? score.current.toLocaleString("en-US").replace(/,/g, " ") : "…"}
+                </span>
+              }
+              look={!prefs.hideCounter ? "show" : hovered ? "dim" : "collapse"}
+              dots={[chestReady.cosmetic, chestReady.emote]}
+              event={event}
               onClick={toggleBar}
-              className={`pill flex items-center gap-1 px-2 text-sm font-medium leading-6 tabular-nums transition-opacity ${barLook}`}
-            >
-              <PawPrint className="size-3.5 text-muted-foreground" />
-              {score ? score.current.toLocaleString("en-US").replace(/,/g, " ") : "…"}
-            </button>
-            <CollapsedTag chests={[chestReady.cosmetic, chestReady.emote]} show={prefs.hideCounter && !hovered} />
+              title={`${score ? `Lifetime: ${score.lifetime}\n` : ""}Click to ${prefs.hideCounter ? "always show" : "show only on hover"}`}
+              max={L.w - 8}
+            />
             <div className={`absolute top-0 flex gap-1 ${chestsRight ? "left-full ml-1" : "right-full mr-1"}`}>
               <Chest
                 kind="cosmetic"

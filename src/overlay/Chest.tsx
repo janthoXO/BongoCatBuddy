@@ -96,19 +96,3 @@ export default function Chest({
     </div>
   );
 }
-
-/**
- * A hidden tag (score / name) collapsed to a tiny pill in its middle, with a dot per chest ready,
- * by place: left = chest, right = emote chest. `show` false: faded out (hovered, the tag shows).
- */
-export const CollapsedTag = ({ chests, show }: { chests: [boolean, boolean]; show: boolean }) => (
-  <span
-    className={`pill pointer-events-none absolute top-1/2 left-1/2 flex h-2.5 w-6 -translate-x-1/2 -translate-y-1/2 items-center gap-0.5 px-[3px] transition-opacity ${
-      show ? "" : "opacity-0"
-    }`}
-  >
-    {chests.map((on, i) => (
-      <span key={i} className={`size-1 rounded-full ${on ? "bg-primary" : ""}`} />
-    ))}
-  </span>
-);

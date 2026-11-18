@@ -86,12 +86,12 @@ export function outfitOf(m: Member, catalog: Map<number, Item> | null): Partial<
   return out;
 }
 
-/** Size of a remote cat window: the cat figure (with or without bongos) plus room for a speech bubble on top and a name tag below. */
+/** Size of a remote cat window: the cat figure (with or without bongos) plus room for emotes on top and a name tag below. */
 export const remoteLayout = (scale: number, bongos = false) => {
   const u = 1.25 * scale;
   const figW = FIGURE_W * u;
   const figH = figureH(bongos) * u;
-  const top = 44; // speech bubble / item popup
+  const top = 44; // emotes float up from the head
   // The sprites end ~14 units above the figure box, so the name tag + gift chests row tucks up into it.
   const bottom = 40 - 14 * u;
   return { u, figW, figH, top, w: Math.ceil(Math.max(figW + 24, 180)), h: Math.ceil(top + figH + bottom) };
