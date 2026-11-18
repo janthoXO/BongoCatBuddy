@@ -180,7 +180,7 @@ export function RemoteCat({
       : speech
         ? {
             k: speech.k,
-            node: <div className="px-2.5 py-[5px]"><p className="line-clamp-2 break-words text-center text-xs leading-[14px] text-foreground">{speech.text}</p></div>,
+            node: <div className="px-2.5 py-[5px]"><p className="break-words text-center text-xs leading-[14px] text-foreground">{speech.text}</p></div>,
           }
         : null;
 

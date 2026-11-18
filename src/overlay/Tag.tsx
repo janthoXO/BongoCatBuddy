@@ -3,8 +3,11 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 /** Something the tag turns into for a while: a bubble, an item popup, the chat input. */
 export type TagEvent = { k: string | number; node: ReactNode; onClick?: () => void; title?: string };
 
-/** Tells the overlay a tag finished resizing, so it reports the new hit rects (see `Overlay`). */
-export const TAG_SETTLED = "tag-settled";
+/**
+ * Tells the overlay a tag starts or ends resizing: it reports the new hit rects, and keeps its
+ * window over every tag (`data-extent`: the pill as it is now and the size it grows to).
+ */
+export const TAG_CHANGED = "tag-changed";
 
 /**
  * The score / name tag under a cat, and the one place its events show: the pill morphs from the
@@ -53,6 +56,7 @@ export function Tag({
     ro.observe(el);
     return () => ro.disconnect();
   }, [k]);
+  useEffect(() => void dispatchEvent(new Event(TAG_CHANGED)), [size?.w, size?.h]);
 
   // what it showed before fades out while the new content fades in
   const last = useRef({ k, node });
@@ -84,6 +88,7 @@ export function Tag({
       <div data-float className="absolute left-1/2 top-0 z-10 -translate-x-1/2">
         <div
           data-solid
+          data-extent
           role={click ? "button" : undefined}
           title={event ? event.title : title}
           onPointerDown={(e) => click && e.stopPropagation()}
@@ -92,7 +97,7 @@ export function Tag({
             e.stopPropagation();
             click();
           }}
-          onTransitionEnd={(e) => e.target === e.currentTarget && dispatchEvent(new Event(TAG_SETTLED))}
+          onTransitionEnd={(e) => e.target === e.currentTarget && dispatchEvent(new Event(TAG_CHANGED))}
           className={`${anim ? "tag" : ""} pill pointer-events-auto relative overflow-hidden ${look === "dim" && !event ? "opacity-60" : ""}`}
           style={{ width: size?.w ?? 0, height: h, marginTop: Math.max(0, (24 - h) / 2), borderRadius: Math.min(12, h / 2) }}
         >
@@ -101,7 +106,7 @@ export function Tag({
               {leaving.node}
             </div>
           )}
-          <div ref={inner} key={k} className={`${layer} ${anim ? "tag-in" : ""}`} style={{ maxWidth: max }}>
+          <div ref={inner} data-extent key={k} className={`${layer} ${anim ? "tag-in" : ""}`} style={{ maxWidth: max }}>
             {node}
           </div>
         </div>

@@ -5,7 +5,7 @@ import { Heart, Menu, MessageCircle, PawPrint } from "lucide-react";
 import { useItems, COSMETICS, isCosmetic, CHEST_TOKEN, EMOTE_CHEST_TOKEN, iconUrl, QUALITY_COLORS, showItem, type Item } from "@/lib/items";
 import { MAX_WHEEL_EMOTES, usePrefs, type Prefs } from "@/lib/prefs";
 import Chest, { type Won } from "./Chest";
-import { Tag, TAG_SETTLED, type TagEvent } from "./Tag";
+import { Tag, TAG_CHANGED, type TagEvent } from "./Tag";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { CatFigure, FIGURE_W, figureH } from "@/components/CatFigure";
@@ -171,6 +171,8 @@ export default function Overlay() {
   const [drag, setDrag] = useState<{ id: string; dx: number; dy: number } | null>(null);
   // what each cat box really shows, by id (see `occupied`)
   const [occ, setOcc] = useState<Record<string, Rect>>({});
+  // lowest screen y any tag shows or grows to (see `Tag`)
+  const [reach, setReach] = useState(0);
   const dragged = useRef(false);
   const [particles, setParticles] = useState<Particle[]>([]);
   const [queue, setQueue] = useState<Popup[]>([]);
@@ -272,10 +274,9 @@ export default function Overlay() {
   // the whole window natively; with other cats the window first stretches over the screen once
   // and the drag happens inside it, so a row or column can re-flow live (a native drag keeps the
   // window's size and would cut off cats that move to the other side).
-  const tight = grow(
-    placed.reduce((r, o) => union(r, { x: o.at[0], y: o.at[1], w: o.r.w, h: o.r.h }), { x: me[0], y: me[1], w: L.w, h: L.h }),
-    PAD,
-  );
+  // A tag grown into an event may reach below the cats (`reach`, screen y): the window covers it too.
+  const cats = placed.reduce((r, o) => union(r, { x: o.at[0], y: o.at[1], w: o.r.w, h: o.r.h }), { x: me[0], y: me[1], w: L.w, h: L.h });
+  const tight = grow(union(cats, { ...cats, h: Math.max(cats.h, reach - cats.y) }), PAD);
   const fit = (r: Rect): Rect => {
     const x = Math.max(0, r.x);
     const y = Math.max(S.top, r.y);
@@ -359,11 +360,11 @@ export default function Overlay() {
   const lastHit = useRef("");
   const [, setMasks] = useState(0);
   useEffect(() => onMask(() => setMasks((n) => n + 1)), []);
-  // a tag finished morphing: its rect changed without a render
+  // a tag started or finished morphing: its rect changes without a render here
   useEffect(() => {
     const f = () => setMasks((n) => n + 1);
-    addEventListener(TAG_SETTLED, f);
-    return () => removeEventListener(TAG_SETTLED, f);
+    addEventListener(TAG_CHANGED, f);
+    return () => removeEventListener(TAG_CHANGED, f);
   }, []);
   useLayoutEffect(() => {
     const els = [...document.querySelectorAll<HTMLElement>("[data-hit]")];
@@ -385,6 +386,8 @@ export default function Overlay() {
       return r ? [[el.dataset.hit!, r]] : [];
     }));
     if (JSON.stringify(shown) !== JSON.stringify(occ)) setOcc(shown);
+    const low = Math.ceil(oy + Math.max(0, ...[...document.querySelectorAll("[data-extent]")].map((el) => el.getBoundingClientRect().bottom)));
+    if (low !== reach) setReach(low);
     const json = JSON.stringify([rects, solid, !!drag]);
     if (json === lastHit.current) return;
     lastHit.current = json;
@@ -622,7 +625,7 @@ export default function Overlay() {
       : speech
         ? {
             k: speech.k,
-            node: <div className="px-2.5 py-[5px]"><p className="line-clamp-2 break-words text-center text-xs leading-[14px]">{speech.text}</p></div>,
+            node: <div className="px-2.5 py-[5px]"><p className="break-words text-center text-xs leading-[14px]">{speech.text}</p></div>,
           }
         : null;
   // Tags stack by height on screen: a tag grown into an event lies over the cat below it.
