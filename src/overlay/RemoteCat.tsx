@@ -23,6 +23,7 @@ export function RemoteCat({
   y,
   z,
   tagHeld,
+  room,
   drag,
 }: {
   member: Member;
@@ -42,6 +43,8 @@ export function RemoteCat({
   z: number;
   /** the pointer is over this cat's tag (its own hover target, see Tag) */
   tagHeld: boolean;
+  /** px from the name tag's middle to the overlay window's nearer edge (see Tag) */
+  room: number;
   /** free layout: start dragging on pointer down; `wasDragged()` is true right after a drag so the click is not a pat */
   drag?: { onPointerDown: (e: React.PointerEvent) => void; wasDragged: () => boolean };
 }) {
@@ -184,6 +187,29 @@ export function RemoteCat({
           }
         : null;
 
+  const chestPills = chests.map(([kind, ready]) =>
+    !shown(kind, ready) ? null : (
+      <button
+        key={kind}
+        type="button"
+        title={`Open ${member.name}'s chest for ${CHEST_PRICE} taps`}
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => void gift(e, kind)}
+        // collapsed: invisible but there, so the layout stays put
+        className={`pill pointer-events-auto relative flex size-6 items-center justify-center transition-opacity ${
+          compact && fx !== kind ? "opacity-0" : ""
+        }`}
+      >
+        {kind === "emote" ? <Smile className="size-3.5 text-primary" /> : <Gift className="size-3.5 text-primary" />}
+        {fx === kind && (
+          <span className="chest-float pointer-events-none absolute -top-3 text-xs font-semibold text-destructive">
+            -{CHEST_PRICE}
+          </span>
+        )}
+      </button>
+    ),
+  );
+
   return (
     <div
       data-hit={member.id}
@@ -234,30 +260,6 @@ export function RemoteCat({
       >
         {/* name tag centered, chests hang off it toward more screen room (like ours) */}
         <div className="relative flex items-center">
-          <div className={`absolute top-0 flex gap-1 ${chestsRight ? "left-full ml-1" : "right-full mr-1"}`}>
-            {chests.map(([kind, ready]) =>
-              !shown(kind, ready) ? null : (
-                <button
-                  key={kind}
-                  type="button"
-                  title={`Open ${member.name}'s chest for ${CHEST_PRICE} taps`}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={(e) => void gift(e, kind)}
-                  // collapsed: invisible but there, so the layout stays put
-                  className={`pill pointer-events-auto relative flex size-6 items-center justify-center transition-opacity ${
-                    compact && fx !== kind ? "opacity-0" : ""
-                  }`}
-                >
-                  {kind === "emote" ? <Smile className="size-3.5 text-primary" /> : <Gift className="size-3.5 text-primary" />}
-                  {fx === kind && (
-                    <span className="chest-float pointer-events-none absolute -top-3 text-xs font-semibold text-destructive">
-                      -{CHEST_PRICE}
-                    </span>
-                  )}
-                </button>
-              ),
-            )}
-          </div>
           <Tag
             rest={<span className="block max-w-28 truncate px-2 text-xs font-medium leading-6">{member.name}</span>}
             look={pinned ? "show" : hovered ? "dim" : "collapse"}
@@ -268,6 +270,8 @@ export function RemoteCat({
             max={L.w - 8}
             hit={`tag:${member.id}`}
             held={tagHeld}
+            room={room}
+            sides={chestsRight ? [null, chestPills] : [chestPills, null]}
           />
         </div>
         {err && (

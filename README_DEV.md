@@ -69,7 +69,7 @@ Minimal, system-like, not gamified. Tokens in `src/index.css`: system font, neut
 
 ## Overlay and input
 
-- One transparent always-on-top window `main`. Size = bounding box of all cats + 24 px padding (`PAD` in `Overlay.tsx`).
+- One transparent always-on-top window `main`. Size = bounding box of all cats + 24 px padding (`PAD` in `Overlay.tsx`), 60 px left and right (`PAD_X`: room for a grown tag pushing its chests / buttons out).
 - Click-through by default (`set_ignore_cursor_events`). Rust gets global mouse moves from rdev. Frontend reports with `set_hit_rects`: `[data-hit]` boxes (hover, ours first) and `solid` rects (`hold` = true while dragging). `update_hit` turns click-through off only when cursor is over a solid rect.
 - Solid = opaque pixels of each cat sprite + buttons/inputs. `src/lib/mask.ts`: sprite drawn to 32x32 canvas, alpha cells merged to rects, LRU cache of 64 masks, fetched on demand. Item CDN has no CORS, so Rust `fetch_art` (ureq, CDN urls only) gives the bytes. Mask not ready or unreadable = whole sprite square.
 - Events to frontend: `hover` (id of hovered rect or null; CSS `:hover` cannot see click-through window), `mouse-up` (left release while hovering; page never sees it during native drag).

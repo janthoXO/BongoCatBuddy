@@ -35,11 +35,15 @@ const TAIL = 2000; // ms on the last lines
  * (`hit`; it may lie over another cat's box). Hovered (`held`) an event stays and a bubble stops
  * scrolling, wheel / two-finger scroll moves it then.
  *
+ * `sides` (chests, buttons) hang off the tag's left and right end; a grown pill pushes them out
+ * along with its edges, and stays narrow enough that they keep inside `room` (px from the tag's
+ * middle to the window's nearer edge: growing the window left would make the cats jump).
+ *
  * `look`: "show" the tag, "dim" it (on hover only, hovered), "collapse" it to the dots pill, one
  * dot per ready chest (left = chest, right = emote chest).
  */
 export function Tag({
-  rest, look, dots, event, onClick, title, max, hit, held,
+  rest, look, dots, event, onClick, title, max, hit, held, sides, room,
 }: {
   rest: ReactNode;
   look: "show" | "dim" | "collapse";
@@ -53,7 +57,29 @@ export function Tag({
   hit: string;
   /** the pointer is over the pill */
   held: boolean;
+  /** what hangs off the tag's left and right end */
+  sides: [ReactNode, ReactNode];
+  /** px from the tag's middle to the window's nearer edge */
+  room: number;
 }) {
+  // the tag's own width and its sides', to push them out and keep the pill inside `room`
+  const slot = useRef<HTMLDivElement>(null);
+  const sideL = useRef<HTMLDivElement>(null);
+  const sideR = useRef<HTMLDivElement>(null);
+  const [widths, setWidths] = useState({ slot: 0, side: 0 });
+  useLayoutEffect(() => {
+    const els = [slot.current!, sideL.current!, sideR.current!];
+    const read = () => {
+      const w = { slot: els[0].offsetWidth, side: Math.max(els[1].offsetWidth, els[2].offsetWidth) };
+      setWidths((o) => (o.slot === w.slot && o.side === w.side ? o : w));
+    };
+    read();
+    const ro = new ResizeObserver(read);
+    els.forEach((el) => ro.observe(el));
+    return () => ro.disconnect();
+  }, []);
+  const widest = Math.max(120, Math.min(max, 2 * (room - 8 - widths.side)));
+
   const collapsed = !event && look === "collapse";
   const k = event ? `e${event.k}` : collapsed ? "dots" : "rest";
   const scroller = useRef<HTMLDivElement>(null);
@@ -150,12 +176,19 @@ export function Tag({
   }, []);
 
   const h = size?.h ?? 24;
+  const shift = Math.max(0, ((size?.w ?? 0) - widths.slot) / 2);
   const click = event ? event.onClick : onClick;
   const layer = "absolute left-1/2 top-0 w-max -translate-x-1/2";
   return (
     <div className="relative">
       {/* the slot: the tag's size, so the chests and buttons around it stay put */}
-      <div data-solid aria-hidden className="invisible">{rest}</div>
+      <div ref={slot} data-solid aria-hidden className="invisible">{rest}</div>
+      <div ref={sideL} className="tag-side absolute right-full top-0 mr-1 flex gap-1" style={{ transform: `translateX(${-shift}px)` }}>
+        {sides[0]}
+      </div>
+      <div ref={sideR} className="tag-side absolute left-full top-0 ml-1 flex gap-1" style={{ transform: `translateX(${shift}px)` }}>
+        {sides[1]}
+      </div>
       <div data-float className="absolute left-1/2 top-0 z-10 -translate-x-1/2">
         <div
           data-solid
@@ -174,11 +207,11 @@ export function Tag({
           style={{ width: size?.w ?? 0, height: h, marginTop: Math.max(0, (24 - h) / 2), borderRadius: Math.min(12, h / 2) }}
         >
           {leaving && (
-            <div key={leaving.k} className={`${layer} tag-out`} style={{ maxWidth: max }}>
+            <div key={leaving.k} className={`${layer} tag-out`} style={{ maxWidth: widest }}>
               {leaving.node}
             </div>
           )}
-          <div ref={inner} data-extent key={k} className={`${layer} ${anim ? "tag-in" : ""}`} style={{ maxWidth: max }}>
+          <div ref={inner} data-extent key={k} className={`${layer} ${anim ? "tag-in" : ""}`} style={{ maxWidth: widest }}>
             {body(true)}
           </div>
         </div>

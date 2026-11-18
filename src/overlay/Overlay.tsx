@@ -42,13 +42,16 @@ type Pos = [number, number];
 type Rect = { x: number; y: number; w: number; h: number };
 
 const PAD = 24; // room around the cats for floating emotes and hearts
+// Room left and right of the cats: a tag grown to its widest pushes its chests / buttons out this
+// far (see `Tag`); growing the window to the left instead would make the cats jump.
+const PAD_X = 60;
 
 const union = (a: Rect, b: Rect): Rect => {
   const x = Math.min(a.x, b.x);
   const y = Math.min(a.y, b.y);
   return { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y };
 };
-const grow = (r: Rect, by: number): Rect => ({ x: r.x - by, y: r.y - by, w: r.w + 2 * by, h: r.h + 2 * by });
+const grow = (r: Rect, bx: number, by: number): Rect => ({ x: r.x - bx, y: r.y - by, w: r.w + 2 * bx, h: r.h + 2 * by });
 
 const SNAP = 8; // px: a dragged cat this close to a screen edge or another cat's line jumps onto it
 
@@ -276,7 +279,7 @@ export default function Overlay() {
   // window's size and would cut off cats that move to the other side).
   // A tag grown into an event may reach below the cats (`reach`, screen y): the window covers it too.
   const cats = placed.reduce((r, o) => union(r, { x: o.at[0], y: o.at[1], w: o.r.w, h: o.r.h }), { x: me[0], y: me[1], w: L.w, h: L.h });
-  const tight = grow(union(cats, { ...cats, h: Math.max(cats.h, reach - cats.y) }), PAD);
+  const tight = grow(union(cats, { ...cats, h: Math.max(cats.h, reach - cats.y) }), PAD_X, PAD);
   const fit = (r: Rect): Rect => {
     const x = Math.max(0, r.x);
     const y = Math.max(S.top, r.y);
@@ -623,6 +626,53 @@ export default function Overlay() {
             onDone: () => setSpeech((s) => (s?.k === speech.k ? null : s)),
           }
         : null;
+  // what hangs off the score tag: the chests toward more screen room, the hover buttons the other way
+  const chests = (
+    <>
+      <Chest
+        kind="cosmetic"
+        onReady={(r) => setChestReady((c) => (c.cosmetic === r ? c : { ...c, cosmetic: r }))}
+        gift={gift.cosmetic}
+        tokens={catalog ? (catalog.get(CHEST_TOKEN)?.qty ?? 0) : null}
+        score={score?.current ?? null}
+        onWon={onWon}
+        compact={prefs.hideCounter && !hovered}
+      />
+      <Chest
+        kind="emote"
+        onReady={(r) => setChestReady((c) => (c.emote === r ? c : { ...c, emote: r }))}
+        gift={gift.emote}
+        tokens={catalog ? (catalog.get(EMOTE_CHEST_TOKEN)?.qty ?? 0) : null}
+        score={score?.current ?? null}
+        onWon={onWon}
+        compact={prefs.hideCounter && !hovered}
+      />
+    </>
+  );
+  const buttons = (
+    <>
+      {lobby && (
+        <button
+          type="button"
+          title="Say something"
+          onClick={() => setTyping(true)}
+          className={`pill flex size-6 items-center justify-center transition-opacity ${showOnHover}`}
+        >
+          <MessageCircle className="size-3" />
+        </button>
+      )}
+      <button
+        type="button"
+        title="Menu"
+        onClick={openMenu}
+        className={`pill flex size-6 items-center justify-center transition-opacity ${showOnHover}`}
+      >
+        <Menu className="size-3" />
+      </button>
+    </>
+  );
+  const cx = me[0] - ox + L.w / 2;
+  const room = Math.min(cx, (win?.w ?? want.w) - cx);
   // Tags stack by height on screen: a tag grown into an event lies over the cat below it.
   const z = Object.fromEntries(
     [["me", me[1]] as const, ...placed.map((o) => [o.m.id, o.at[1]] as const)]
@@ -644,6 +694,7 @@ export default function Overlay() {
           prefs={prefs}
           hovered={hover === m.id || hover === `tag:${m.id}`}
           tagHeld={hover === `tag:${m.id}`}
+          room={Math.min(x - ox + r.w / 2, (win?.w ?? want.w) - (x - ox + r.w / 2))}
           pinned={prefs.shownNames.includes(m.id)}
           onToggleName={() =>
             update({ shownNames: prefs.shownNames.includes(m.id) ? prefs.shownNames.filter((x) => x !== m.id) : [...prefs.shownNames, m.id] })
@@ -747,47 +798,9 @@ export default function Overlay() {
               max={L.w - 8}
               hit="tag:me"
               held={hover === "tag:me"}
+              room={room}
+              sides={chestsRight ? [buttons, chests] : [chests, buttons]}
             />
-            <div className={`absolute top-0 flex gap-1 ${chestsRight ? "left-full ml-1" : "right-full mr-1"}`}>
-              <Chest
-                kind="cosmetic"
-                onReady={(r) => setChestReady((c) => (c.cosmetic === r ? c : { ...c, cosmetic: r }))}
-                gift={gift.cosmetic}
-                tokens={catalog ? (catalog.get(CHEST_TOKEN)?.qty ?? 0) : null}
-                score={score?.current ?? null}
-                onWon={onWon}
-                compact={prefs.hideCounter && !hovered}
-              />
-              <Chest
-                kind="emote"
-                onReady={(r) => setChestReady((c) => (c.emote === r ? c : { ...c, emote: r }))}
-                gift={gift.emote}
-                tokens={catalog ? (catalog.get(EMOTE_CHEST_TOKEN)?.qty ?? 0) : null}
-                score={score?.current ?? null}
-                onWon={onWon}
-                compact={prefs.hideCounter && !hovered}
-              />
-            </div>
-            <div className={`absolute top-0 flex gap-1 ${chestsRight ? "right-full mr-1" : "left-full ml-1"}`}>
-              {lobby && (
-                <button
-                  type="button"
-                  title="Say something"
-                  onClick={() => setTyping(true)}
-                  className={`pill flex size-6 items-center justify-center transition-opacity ${showOnHover}`}
-                >
-                  <MessageCircle className="size-3" />
-                </button>
-              )}
-              <button
-                type="button"
-                title="Menu"
-                onClick={openMenu}
-                className={`pill flex size-6 items-center justify-center transition-opacity ${showOnHover}`}
-              >
-                <Menu className="size-3" />
-              </button>
-            </div>
           </div>
           {notice && (
             <p
