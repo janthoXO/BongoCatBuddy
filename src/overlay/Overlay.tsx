@@ -354,7 +354,7 @@ export default function Overlay() {
   };
 
   // Tell Rust where the boxes are after every render that moved one. Rust hovers the first rect
-  // under the cursor, so ours goes first: other cats' empty bubble room may overlap it (column).
+  // under the cursor: tags first (see `Tag`), then ours, since other boxes may overlap it (column).
   // Clicks only land on what is solid: each sprite's opaque cells (its whole square until its
   // mask is in) and the buttons; the rest of a box only hovers, clicks there go through.
   const lastHit = useRef("");
@@ -367,11 +367,12 @@ export default function Overlay() {
     return () => removeEventListener(TAG_CHANGED, f);
   }, []);
   useLayoutEffect(() => {
+    // tags first (a grown one lies over other boxes), higher on screen first like they stack
+    const tag = (el: HTMLElement) => el.dataset.hit!.startsWith("tag:");
     const els = [...document.querySelectorAll<HTMLElement>("[data-hit]")];
-    const rects = [...els.filter((el) => el.dataset.hit === "me"), ...els.filter((el) => el.dataset.hit !== "me")].map((el) => {
-      const r = el.getBoundingClientRect();
-      return [el.dataset.hit, r.x, r.y, r.width, r.height];
-    });
+    const tags = els.filter(tag).map((el) => [el, el.getBoundingClientRect()] as const).sort((a, b) => a[1].y - b[1].y);
+    const boxes = [...els.filter((el) => el.dataset.hit === "me"), ...els.filter((el) => el.dataset.hit !== "me" && !tag(el))];
+    const rects = [...tags, ...boxes.map((el) => [el, el.getBoundingClientRect()] as const)].map(([el, r]) => [el.dataset.hit, r.x, r.y, r.width, r.height]);
     const solid = [...document.querySelectorAll<HTMLElement>("[data-hit] [data-figure] img, [data-hit] [data-solid], [data-hit] button, [data-hit] input")]
       .flatMap((el) => {
         const r = el.getBoundingClientRect();
@@ -381,7 +382,7 @@ export default function Overlay() {
         return m.map(([x, y, w, h]) => [r.x + (flip ? 1 - x - w : x) * r.width, r.y + y * r.height, w * r.width, h * r.height]);
       })
       .map((r) => r.map(Math.round));
-    const shown = Object.fromEntries(els.flatMap((el) => {
+    const shown = Object.fromEntries(boxes.flatMap((el) => {
       const r = occupied(el);
       return r ? [[el.dataset.hit!, r]] : [];
     }));
@@ -436,11 +437,6 @@ export default function Overlay() {
     });
     return () => void un.then((f) => f());
   }, []);
-  useEffect(() => {
-    if (!speech) return;
-    const id = setTimeout(() => setSpeech(null), 5000);
-    return () => clearTimeout(id);
-  }, [speech?.k]);
   const say = (text: string) => {
     setTyping(false);
     text = text.trim().slice(0, MAX_SPEECH);
@@ -544,11 +540,6 @@ export default function Overlay() {
       update({ equipped: { ...prefs.equipped, [it.slot]: id } });
   };
   const head = queue[0];
-  useEffect(() => {
-    if (!head) return;
-    const id = setTimeout(() => setQueue((q) => q.slice(1)), 4000);
-    return () => clearTimeout(id);
-  }, [head?.k]);
   const won = head && (catalog?.get(head.id) ?? null);
 
   const useEmote = (item: Item) => {
@@ -569,7 +560,7 @@ export default function Overlay() {
   const rowTop = TOP + L.boxH - ART_END * L.u + 2;
   const notice = flash ?? error;
   const openMenu = () => void invoke("open_menu").catch(() => {});
-  const hovered = hover === "me" || drag?.id === "me";
+  const hovered = hover === "me" || hover === "tag:me" || drag?.id === "me";
   const wheel = hovered && !drag;
   const showOnHover = hovered ? "" : "opacity-0";
   // What the score tag turns into for a while: typing, else a new item, else what we said.
@@ -594,6 +585,8 @@ export default function Overlay() {
     : head && won !== undefined
       ? {
           k: head.k,
+          ms: 4000,
+          onDone: () => setQueue((q) => (q[0]?.k === head.k ? q.slice(1) : q)),
           title: "Show in inventory",
           onClick: () => {
             showItem(head.id);
@@ -625,7 +618,9 @@ export default function Overlay() {
       : speech
         ? {
             k: speech.k,
-            node: <div className="px-2.5 py-[5px]"><p className="break-words text-center text-xs leading-[14px]">{speech.text}</p></div>,
+            text: speech.text,
+            ms: 5000,
+            onDone: () => setSpeech((s) => (s?.k === speech.k ? null : s)),
           }
         : null;
   // Tags stack by height on screen: a tag grown into an event lies over the cat below it.
@@ -647,7 +642,8 @@ export default function Overlay() {
           member={m}
           catalog={catalog}
           prefs={prefs}
-          hovered={hover === m.id}
+          hovered={hover === m.id || hover === `tag:${m.id}`}
+          tagHeld={hover === `tag:${m.id}`}
           pinned={prefs.shownNames.includes(m.id)}
           onToggleName={() =>
             update({ shownNames: prefs.shownNames.includes(m.id) ? prefs.shownNames.filter((x) => x !== m.id) : [...prefs.shownNames, m.id] })
@@ -749,6 +745,8 @@ export default function Overlay() {
               onClick={toggleBar}
               title={`${score ? `Lifetime: ${score.lifetime}\n` : ""}Click to ${prefs.hideCounter ? "always show" : "show only on hover"}`}
               max={L.w - 8}
+              hit="tag:me"
+              held={hover === "tag:me"}
             />
             <div className={`absolute top-0 flex gap-1 ${chestsRight ? "left-full ml-1" : "right-full mr-1"}`}>
               <Chest

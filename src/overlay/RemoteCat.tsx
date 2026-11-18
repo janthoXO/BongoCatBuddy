@@ -22,6 +22,7 @@ export function RemoteCat({
   x,
   y,
   z,
+  tagHeld,
   drag,
 }: {
   member: Member;
@@ -39,6 +40,8 @@ export function RemoteCat({
   y: number;
   /** stacking order of the name tag row: cats higher on screen above, so a grown tag lies over the cat below */
   z: number;
+  /** the pointer is over this cat's tag (its own hover target, see Tag) */
+  tagHeld: boolean;
   /** free layout: start dragging on pointer down; `wasDragged()` is true right after a drag so the click is not a pat */
   drag?: { onPointerDown: (e: React.PointerEvent) => void; wasDragged: () => boolean };
 }) {
@@ -105,7 +108,6 @@ export function RemoteCat({
         if (prefs.muteChats) return;
         const k = ++seq.current;
         setSpeech({ k, text: m.message.slice(0, MAX_SPEECH) });
-        setTimeout(() => setSpeech((s) => (s?.k === k ? null : s)), 5000);
       } else if (m.channel === CH.item) {
         if (!prefs.multiplayerPopups) return;
         setQueue((q) => [...q, { k: ++seq.current, id: Number(m.message) }]);
@@ -115,12 +117,6 @@ export function RemoteCat({
   }, [id]);
 
   const head = queue[0];
-  useEffect(() => {
-    if (!head) return;
-    const t = setTimeout(() => setQueue((q) => q.slice(1)), 4000);
-    return () => clearTimeout(t);
-  }, [head?.k]);
-
   // A chest hidden after a gift comes back once the member's flag went false.
   useEffect(() => {
     setHidden((h) => ({
@@ -156,6 +152,8 @@ export function RemoteCat({
     head && won !== undefined
       ? {
           k: head.k,
+          ms: 4000,
+          onDone: () => setQueue((q) => (q[0]?.k === head.k ? q.slice(1) : q)),
           node: (
             <div className="relative flex items-center gap-2 py-1 pl-3 pr-3">
               <span
@@ -180,7 +178,9 @@ export function RemoteCat({
       : speech
         ? {
             k: speech.k,
-            node: <div className="px-2.5 py-[5px]"><p className="break-words text-center text-xs leading-[14px] text-foreground">{speech.text}</p></div>,
+            text: speech.text,
+            ms: 5000,
+            onDone: () => setSpeech((s) => (s?.k === speech.k ? null : s)),
           }
         : null;
 
@@ -266,6 +266,8 @@ export function RemoteCat({
             onClick={onToggleName}
             title={`Click to ${pinned ? "show only on hover" : "always show"}`}
             max={L.w - 8}
+            hit={`tag:${member.id}`}
+            held={tagHeld}
           />
         </div>
         {err && (
